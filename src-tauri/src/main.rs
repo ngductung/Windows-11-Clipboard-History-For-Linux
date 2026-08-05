@@ -2,9 +2,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use parking_lot::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
@@ -35,6 +35,21 @@ static STARTED_IN_BACKGROUND: AtomicBool = AtomicBool::new(false);
 /// While false, background mode will still hide the window on focus
 /// After the first user toggle, this is set to true to allow normal show/hide behavior
 static INITIAL_SHOW_ALLOWED: AtomicBool = AtomicBool::new(false);
+static OPENING_POSITION_SUPPRESS_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn suppress_position_save_for(duration: Duration) {
+    OPENING_POSITION_SUPPRESS_UNTIL_MS.store(
+        now_ms().saturating_add(duration.as_millis() as u64),
+        Ordering::SeqCst,
+    );
+}
 
 fn parse_show_at_args(args: &[String]) -> Option<(i32, i32)> {
     let idx = args.iter().position(|arg| arg == "--show-at")?;
@@ -514,6 +529,7 @@ impl WindowController {
     }
 
     fn position_and_show_at(window: &WebviewWindow, app: &AppHandle, x: i32, y: i32) {
+        suppress_position_save_for(Duration::from_millis(700));
         Self::position_at(window, x, y);
         Self::show_positioned(window, app, is_wayland());
     }
@@ -751,21 +767,29 @@ impl SettingsController {
 fn handle_window_moved_for_wayland(
     window: &WebviewWindow,
     state: &State<AppState>,
-    _pos: &PhysicalPosition<i32>,
+    pos: &PhysicalPosition<i32>,
 ) {
     if !is_wayland() || !window.is_visible().unwrap_or(false) {
         return;
     }
 
-    let _monitor_name = window
+    if now_ms() < OPENING_POSITION_SUPPRESS_UNTIL_MS.load(Ordering::SeqCst) {
+        return;
+    }
+
+    if pos.x < -10_000 || pos.y < -10_000 {
+        return;
+    }
+
+    let monitor_name = window
         .current_monitor()
         .ok()
         .flatten()
         .and_then(|m| m.name().map(|n| n.to_string()));
 
-    let _config = state.config_manager.lock();
+    let mut config = state.config_manager.lock();
     // UPDATE MEMORY ONLY (No Disk I/O here)
-    // config.update_state(monitor_name, pos.x, pos.y);
+    config.update_state(monitor_name, pos.x, pos.y);
 }
 
 // --- Background Listeners ---

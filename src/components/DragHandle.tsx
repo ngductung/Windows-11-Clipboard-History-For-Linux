@@ -9,15 +9,6 @@ interface DragHandleProps {
 export function DragHandle({ isDark }: DragHandleProps) {
   const appWindow = getCurrentWindow()
 
-  const handleMouseDown = async (e: React.MouseEvent) => {
-    if (e.button !== 0) return
-    try {
-      await appWindow.startDragging()
-    } catch (error) {
-      console.warn('Window dragging not available:', error)
-    }
-  }
-
   const handleClose = (e: React.MouseEvent) => {
     e.stopPropagation()
     appWindow.hide()
@@ -25,12 +16,9 @@ export function DragHandle({ isDark }: DragHandleProps) {
 
   return (
     <div
-      data-tauri-drag-region
-      className="relative w-full flex justify-center pt-4 pb-1 cursor-grab active:cursor-grabbing select-none"
-      onMouseDown={handleMouseDown}
+      className="relative w-full flex justify-center pt-4 pb-1 select-none"
     >
       <div
-        data-tauri-drag-region
         className={clsx(
           'w-10 h-1 rounded-full pointer-events-none',
           isDark ? 'bg-white/20' : 'bg-black/20'

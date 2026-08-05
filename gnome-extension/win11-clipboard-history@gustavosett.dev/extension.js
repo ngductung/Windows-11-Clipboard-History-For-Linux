@@ -9,11 +9,15 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 const KEYBINDING_NAME = 'toggle-clipboard';
 const WINDOW_TITLE = 'Clipboard History';
 const LOG_PREFIX = '[Win11ClipboardHistoryPointer]';
+const MOVE_RETRY_COUNT = 80;
+const MOVE_RETRY_INTERVAL_MS = 5;
+const POST_SHOW_MOVE_DELAYS_MS = [16, 32, 64];
 const WINDOW_PADDING = 10;
 
 export default class Win11ClipboardHistoryExtension extends Extension {
   enable() {
     this._settings = this.getSettings();
+    this._timeoutIds = new Set();
     log(`${LOG_PREFIX} enabled`);
 
     Main.wm.addKeybinding(
@@ -26,6 +30,10 @@ export default class Win11ClipboardHistoryExtension extends Extension {
   }
 
   disable() {
+    for (const timeoutId of this._timeoutIds ?? [])
+      GLib.source_remove(timeoutId);
+    this._timeoutIds = null;
+
     Main.wm.removeKeybinding(KEYBINDING_NAME);
     log(`${LOG_PREFIX} disabled`);
     this._settings = null;
@@ -57,6 +65,7 @@ export default class Win11ClipboardHistoryExtension extends Extension {
       }
 
       this._spawnApp(command, Math.round(x), Math.round(y), targetHint);
+      this._moveWindowWhenReady(Math.round(x), Math.round(y), MOVE_RETRY_COUNT, false);
     } catch (error) {
       logError(error, 'Failed to open win11-clipboard-history at pointer');
     }
@@ -84,6 +93,64 @@ export default class Win11ClipboardHistoryExtension extends Extension {
         '',
       title: window.get_title?.() || '',
     };
+  }
+
+  _moveWindowWhenReady(x, y, attemptsLeft, movedBeforeVisible) {
+    if (!this._settings || attemptsLeft <= 0)
+      return;
+
+    const window = this._findClipboardWindow();
+    const windowVisible = window?.showing_on_its_workspace?.() ?? false;
+    if (window && !windowVisible && !movedBeforeVisible) {
+      try {
+        log(`${LOG_PREFIX} pre-moving window before visible to ${x}, ${y}`);
+        this._moveWindowToPointer(window, x, y);
+        movedBeforeVisible = true;
+      } catch (error) {
+        logError(error, `${LOG_PREFIX} failed to pre-move clipboard window`);
+      }
+    }
+
+    if (window && windowVisible) {
+      try {
+        this._moveWindowToPointer(window, x, y);
+        this._scheduleSettledMoves(window, x, y);
+      } catch (error) {
+        logError(error, `${LOG_PREFIX} failed to move clipboard window`);
+      }
+      return;
+    }
+
+    this._addTimeout(MOVE_RETRY_INTERVAL_MS, () => {
+      this._moveWindowWhenReady(x, y, attemptsLeft - 1, movedBeforeVisible);
+    });
+  }
+
+  _addTimeout(intervalMs, callback) {
+    if (!this._timeoutIds)
+      return;
+
+    const timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, intervalMs, () => {
+      this._timeoutIds?.delete(timeoutId);
+      callback();
+      return GLib.SOURCE_REMOVE;
+    });
+    this._timeoutIds.add(timeoutId);
+  }
+
+  _scheduleSettledMoves(window, x, y) {
+    for (const delayMs of POST_SHOW_MOVE_DELAYS_MS) {
+      this._addTimeout(delayMs, () => {
+        if (!this._settings || !window?.showing_on_its_workspace?.())
+          return;
+
+        try {
+          this._moveWindowToPointer(window, x, y);
+        } catch (error) {
+          logError(error, `${LOG_PREFIX} failed to settle clipboard window position`);
+        }
+      });
+    }
   }
 
   _findClipboardWindow() {
