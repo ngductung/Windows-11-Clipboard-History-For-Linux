@@ -1,427 +1,51 @@
 # Windows 11 Clipboard History For Linux
 
-Tài liệu này gồm 2 phần:
+Clipboard manager phong cách Windows 11 cho Linux, hỗ trợ Wayland/X11, mở nhanh bằng `Super+V`, lưu lịch sử clipboard local và có popup theo vị trí con trỏ trên GNOME Wayland thông qua extension đi kèm.
 
-- Phần 1: dành cho người dùng cuối (end-user), cài đặt từ file `.deb` đã phát hành.
-- Phần 2: dành cho developer, build và cài đặt từ source trên Ubuntu/Debian GNOME Wayland.
+## Dành Cho Người Dùng Cuối
 
-## 1. Hướng Dẫn Cho Người Dùng
+Phần này dành cho người chỉ muốn cài app và sử dụng hằng ngày.
 
-Nếu bạn chỉ cần dùng app, hãy tải file `.deb` từ trang Release của dự án, sau đó cài đặt theo các bước sau:
+### Cài Từ File `.deb` Trên Release
 
-1. Tải file `.deb` về máy, ví dụ vào thư mục `Downloads`.
-2. Mở terminal tại thư mục chứa file `.deb`:
+Với Ubuntu/Debian/Mint/Pop!_OS, người dùng cuối nên cài bằng file `.deb` đã build sẵn trong GitHub Releases.
+
+1. Mở trang Releases.
+2. Tải file `.deb` mới nhất, ví dụ:
+
+```text
+win11-clipboard-history_0.7.1_amd64.deb
+```
+
+3. Cài file vừa tải:
 
 ```bash
 cd ~/Downloads
+sudo apt install ./win11-clipboard-history_*_amd64.deb
 ```
 
-3. Cài đặt package:
+4. Mở app:
 
 ```bash
-sudo apt install ./win11-clipboard-history_*.deb
+win11-clipboard-history
 ```
 
-Nếu hệ thống báo lỗi về dependency chưa được cài, chạy tiếp:
+Sau khi cài, app sẽ hướng dẫn cấu hình shortcut và quyền cần thiết trong Setup Wizard.
 
-```bash
-sudo apt -f install
-```
+### Cài GNOME Extension Cho Wayland
 
-4. Sau khi cài xong, mở ứng dụng từ menu ứng dụng hoặc chạy:
+Trên GNOME Wayland, nếu muốn `Super+V` mở popup đúng vị trí con trỏ chuột, cần cài GNOME extension đi kèm.
 
-```bash
-win11-clipboard-history --help
-```
-
-5. Nếu bạn dùng Wayland và muốn app tự paste vào ứng dụng đích, có thể cần cấp quyền `/dev/uinput` như hướng dẫn ở phần developer bên dưới.
-
-## 2. Hướng Dẫn Cho Developer
-
-Phần này dành cho việc build từ source và cài đặt thủ công trên Ubuntu/Debian GNOME Wayland.
-
-### 2.1. Yêu Cầu Hệ Thống
-
-Kiểm tra session hiện tại:
-
-```bash
-echo "$XDG_SESSION_TYPE"
-gnome-shell --version
-```
-
-Nếu `XDG_SESSION_TYPE=wayland`, nên cài GNOME extension trong repo này để popup có thể mở tại vị trí con trỏ chuột.
-
-### 2.2. Cài Dependency Build
-
-Từ thư mục source:
-
-```bash
-cd /duong/dan/toi/Windows-11-Clipboard-History-For-Linux
-make deps
-make rust
-make node
-source "$HOME/.cargo/env"
-npm ci
-```
-
-Kiểm tra nhanh:
-
-```bash
-node --version
-npm --version
-rustc --version
-cargo --version
-```
-
-Nếu máy đã có Node.js/Rust sẵn, `make rust` và `make node` có thể báo đã cài sẵn, điều đó bình thường.
-
-### 2.3. Build File `.deb`
-
-Chạy verify trước khi build:
-
-```bash
-npm run lint
-PATH="$HOME/.cargo/bin:$PATH" cargo fmt --manifest-path src-tauri/Cargo.toml --check
-PATH="$HOME/.cargo/bin:$PATH" cargo check --manifest-path src-tauri/Cargo.toml --locked
-```
-
-Build package `.deb`:
-
-```bash
-PATH="$HOME/.cargo/bin:$PATH" npm run tauri:build -- --bundles deb
-```
-
-File `.deb` sẽ nằm tại:
-
-```bash
-src-tauri/target/release/bundle/deb/
-```
-
-Ví dụ:
-
-```bash
-ls -lh src-tauri/target/release/bundle/deb/*.deb
-```
-
-### 2.4. Cài Đặt File `.deb`
-
-Cài lần đầu bằng `apt`:
-
-```bash
-sudo apt install ./src-tauri/target/release/bundle/deb/win11-clipboard-history_0.7.1_amd64.deb
-```
-
-Nếu đang cài đè cùng version, `apt` có thể báo package đã là newest version. Khi đó dùng `dpkg -i` để ép ghi đè binary mới:
-
-```bash
-sudo dpkg -i ./src-tauri/target/release/bundle/deb/win11-clipboard-history_0.7.1_amd64.deb
-sudo apt -f install
-```
-
-Kiểm tra binary:
-
-```bash
-which win11-clipboard-history
-win11-clipboard-history --help
-```
-
-Nếu đang debug tính năng mở theo tọa độ, output `--help` cần có flag:
-
-```text
---show-at X Y
-```
-
-### 2.5. Cấp Quyền Tự Paste Bằng `/dev/uinput`
-
-Trên Wayland, app cần `/dev/uinput` để mô phỏng phím paste. Nếu chọn item chỉ copy vào clipboard nhưng không tự paste, chạy:
-
-```bash
-sudo modprobe uinput
-sudo setfacl -m u:$USER:rw /dev/uinput
-```
-
-Để quyền bền hơn sau reboot:
-
-```bash
-sudo usermod -aG input "$USER"
-```
-
-Sau khi thêm user vào group `input`, logout/login lại.
-
-Kiểm tra:
-
-```bash
-ls -l /dev/uinput
-getfacl /dev/uinput
-groups
-```
-
-### 2.6. Cài GNOME Extension
-
-Extension nằm trong:
-
-```bash
-gnome-extension/win11-clipboard-history@gustavosett.dev
-```
-
-Nó bắt `Super+V`, lấy vị trí con trỏ chuột từ GNOME Shell, rồi gọi:
-
-```bash
-win11-clipboard-history --show-at X Y
-```
-
-Cài dependency cho extension:
-
-```bash
-sudo apt install -y libglib2.0-bin gnome-shell-extension-prefs
-```
-
-Cài extension từ thư mục source:
+Nếu release có đính kèm gói extension, tải và giải nén theo hướng dẫn trong release đó. Nếu bạn đang có source code của project, cài extension bằng:
 
 ```bash
 scripts/install-gnome-extension.sh
-```
-
-Hoặc dùng Makefile:
-
-```bash
-make install-gnome-extension
-```
-
-Nếu command app không phải `win11-clipboard-history`, truyền command rõ ràng:
-
-```bash
-scripts/install-gnome-extension.sh "/duong/dan/toi/win11-clipboard-history"
-```
-
-Script sẽ:
-
-- Copy extension vào `~/.local/share/gnome-shell/extensions/win11-clipboard-history@gustavosett.dev`.
-- Compile schema bằng `glib-compile-schemas`.
-- Set command app trong gsettings của extension.
-- Giải phóng `Super+V` khỏi shortcut notification tray của GNOME nếu cần.
-- Disable shortcut custom cũ của app nếu nó đang chiếm `Super+V`.
-- Enable extension nếu `gnome-extensions` khả dụng.
-
-Reload extension:
-
-```bash
 gnome-extensions disable win11-clipboard-history@gustavosett.dev
 sleep 1
 gnome-extensions enable win11-clipboard-history@gustavosett.dev
 ```
 
-Kiểm tra:
-
-```bash
-gnome-extensions info win11-clipboard-history@gustavosett.dev
-```
-
-Kết quả mong đợi:
-
-```text
-
-Nếu bạn chỉ cần dùng app, hãy tải file `.deb` từ trang Release của dự án, sau đó cài đặt theo các bước sau:
-
-1. Tải file `.deb` về máy, ví dụ vào thư mục `Downloads`.
-2. Mở terminal tại thư mục chứa file `.deb`:
-
-```bash
-cd ~/Downloads
-```
-
-3. Cài đặt package:
-
-```bash
-sudo apt install ./win11-clipboard-history_*.deb
-```
-
-Nếu hệ thống báo lỗi về dependency chưa được cài, chạy tiếp:
-
-```bash
-sudo apt -f install
-```
-
-4. Sau khi cài xong, mở ứng dụng từ menu ứng dụng hoặc chạy:
-
-```bash
-win11-clipboard-history --help
-```
-
-5. Nếu bạn dùng Wayland và muốn app tự paste vào ứng dụng đích, có thể cần cấp quyền `/dev/uinput` như hướng dẫn bên dưới.
-
-## 1. Yêu Cầu Hệ Thống
-
-Kiểm tra session hiện tại:
-
-```bash
-echo "$XDG_SESSION_TYPE"
-gnome-shell --version
-```
-
-Nếu `XDG_SESSION_TYPE=wayland`, nên cài GNOME extension trong repo này để popup có thể mở tại vị trí con trỏ chuột.
-
-## 2. Cài Dependency Build
-
-Từ thư mục source:
-
-```bash
-cd /duong/dan/toi/Windows-11-Clipboard-History-For-Linux
-make deps
-make rust
-make node
-source "$HOME/.cargo/env"
-npm ci
-```
-
-Kiểm tra nhanh:
-
-```bash
-node --version
-npm --version
-rustc --version
-cargo --version
-```
-
-Nếu máy đã có Node.js/Rust sẵn, `make rust` và `make node` có thể báo đã cài sẵn, điều đó bình thường.
-
-## 3. Build File `.deb`
-
-Chạy verify trước khi build:
-
-```bash
-npm run lint
-PATH="$HOME/.cargo/bin:$PATH" cargo fmt --manifest-path src-tauri/Cargo.toml --check
-PATH="$HOME/.cargo/bin:$PATH" cargo check --manifest-path src-tauri/Cargo.toml --locked
-```
-
-Build package `.deb`:
-
-```bash
-PATH="$HOME/.cargo/bin:$PATH" npm run tauri:build -- --bundles deb
-```
-
-File `.deb` sẽ nằm tại:
-
-```bash
-src-tauri/target/release/bundle/deb/
-```
-
-Ví dụ:
-
-```bash
-ls -lh src-tauri/target/release/bundle/deb/*.deb
-```
-
-## 4. Cài Đặt File `.deb`
-
-Cài lần đầu bằng `apt`:
-
-```bash
-sudo apt install ./src-tauri/target/release/bundle/deb/win11-clipboard-history_0.7.1_amd64.deb
-```
-
-Nếu đang cài đè cùng version, `apt` có thể báo package đã là newest version. Khi đó dùng `dpkg -i` để ép ghi đè binary mới:
-
-```bash
-sudo dpkg -i ./src-tauri/target/release/bundle/deb/win11-clipboard-history_0.7.1_amd64.deb
-sudo apt -f install
-```
-
-Kiểm tra binary:
-
-```bash
-which win11-clipboard-history
-win11-clipboard-history --help
-```
-
-Nếu đang debug tính năng mở theo tọa độ, output `--help` cần có flag:
-
-```text
---show-at X Y
-```
-
-## 5. Cấp Quyền Tự Paste Bằng `/dev/uinput`
-
-Trên Wayland, app cần `/dev/uinput` để mô phỏng phím paste. Nếu chọn item chỉ copy vào clipboard nhưng không tự paste, chạy:
-
-```bash
-sudo modprobe uinput
-sudo setfacl -m u:$USER:rw /dev/uinput
-```
-
-Để quyền bền hơn sau reboot:
-
-```bash
-sudo usermod -aG input "$USER"
-```
-
-Sau khi thêm user vào group `input`, logout/login lại.
-
-Kiểm tra:
-
-```bash
-ls -l /dev/uinput
-getfacl /dev/uinput
-groups
-```
-
-## 6. Cài GNOME Extension
-
-Extension nằm trong:
-
-```bash
-gnome-extension/win11-clipboard-history@gustavosett.dev
-```
-
-Nó bắt `Super+V`, lấy vị trí con trỏ chuột từ GNOME Shell, rồi gọi:
-
-```bash
-win11-clipboard-history --show-at X Y
-```
-
-Cài dependency cho extension:
-
-```bash
-sudo apt install -y libglib2.0-bin gnome-shell-extension-prefs
-```
-
-Cài extension từ thư mục source:
-
-```bash
-scripts/install-gnome-extension.sh
-```
-
-Hoặc dùng Makefile:
-
-```bash
-make install-gnome-extension
-```
-
-Nếu command app không phải `win11-clipboard-history`, truyền command rõ ràng:
-
-```bash
-scripts/install-gnome-extension.sh "/usr/bin/win11-clipboard-history"
-```
-
-Script sẽ:
-
-- Copy extension vào `~/.local/share/gnome-shell/extensions/win11-clipboard-history@gustavosett.dev`.
-- Compile schema bằng `glib-compile-schemas`.
-- Set command app trong gsettings của extension.
-- Giải phóng `Super+V` khỏi shortcut notification tray của GNOME nếu cần.
-- Disable shortcut custom cũ của app nếu nó đang chiếm `Super+V`.
-- Enable extension nếu `gnome-extensions` khả dụng.
-
-Reload extension:
-
-```bash
-gnome-extensions disable win11-clipboard-history@gustavosett.dev
-sleep 1
-gnome-extensions enable win11-clipboard-history@gustavosett.dev
-```
-
-Kiểm tra:
+Kiểm tra extension:
 
 ```bash
 gnome-extensions info win11-clipboard-history@gustavosett.dev
@@ -434,133 +58,13 @@ Enabled: Yes
 State: ACTIVE
 ```
 
-Nếu `Super+V` chưa trigger sau khi cài/reload, logout/login lại để GNOME Shell nạp lại extension và schema.
+Nếu `Super+V` chưa hoạt động ngay sau khi cài extension, logout/login lại để GNOME Shell nạp lại extension.
 
-## 7. Chạy App Nền
+Hướng dẫn chi tiết cho Ubuntu GNOME Wayland nằm tại [docs/ubuntu-gnome-wayland-install.md](docs/ubuntu-gnome-wayland-install.md).
 
-Dừng process cũ nếu đang chạy:
+### Gỡ Cài Đặt
 
-```bash
-pids=$(pgrep -f '^/usr/bin/win11-clipboard-history-bin' || true)
-if [ -n "$pids" ]; then
-  kill $pids
-  sleep 2
-fi
-```
-
-Chạy app ở background:
-
-```bash
-nohup /usr/bin/win11-clipboard-history --background >/tmp/win11-clipboard-history.log 2>&1 &
-```
-
-Kiểm tra:
-
-```bash
-pgrep -af '^/usr/bin/win11-clipboard-history-bin'
-tail -n 120 /tmp/win11-clipboard-history.log
-```
-
-## 8. Test Sau Khi Cài
-
-1. Copy một đoạn text bất kỳ.
-2. Click vào ô nhập text của app đích.
-3. Đưa chuột đến vị trí muốn hiện popup.
-4. Bấm `Super+V`.
-5. Popup phải hiện gần vị trí con trỏ chuột.
-6. Chọn item trong history.
-7. Item phải được paste vào app đích.
-
-Với terminal, app có thể cần paste bằng `Ctrl+Shift+V`. Cấu hình trong Settings:
-
-```text
-Paste Shortcuts -> Ctrl+Shift+V Targets
-```
-
-Mỗi pattern một dòng, ví dụ:
-
-```text
-terminal
-gnome-terminal
-kgx
-konsole
-alacritty
-kitty
-wezterm
-tilix
-terminator
-xterm
-```
-
-## 9. Debug Nhanh
-
-### Popup không mở tại vị trí con trỏ
-
-Xem log GNOME extension:
-
-```bash
-journalctl --user -f -o cat | grep --line-buffered Win11ClipboardHistoryPointer
-```
-
-Khi bấm `Super+V`, log đúng sẽ có dạng:
-
-```text
-[Win11ClipboardHistoryPointer] keybinding fired at X, Y using win11-clipboard-history
-```
-
-Nếu không có `keybinding fired`, extension chưa bắt được shortcut hoặc shortcut bị ứng dụng khác chiếm.
-
-### App không tự paste
-
-Chạy app từ terminal để xem log:
-
-```bash
-pids=$(pgrep -f '^/usr/bin/win11-clipboard-history-bin' || true)
-if [ -n "$pids" ]; then
-  kill $pids
-  sleep 2
-fi
-win11-clipboard-history
-```
-
-Chọn item trong popup. Log đúng thường có:
-
-```text
-[SimulatePaste] Sending Ctrl+V...
-[uinput] Persistent virtual keyboard is ready
-[SimulatePaste] Ctrl+V sent via uinput
-```
-
-Nếu log báo lỗi `/dev/uinput`, chạy lại:
-
-```bash
-sudo modprobe uinput
-sudo setfacl -m u:$USER:rw /dev/uinput
-```
-
-### Extension đã cài nhưng không active
-
-Kiểm tra danh sách extension:
-
-```bash
-gnome-extensions list | grep win11-clipboard
-gnome-extensions info win11-clipboard-history@gustavosett.dev
-```
-
-Nếu cần cài lại:
-
-```bash
-scripts/install-gnome-extension.sh
-gnome-extensions disable win11-clipboard-history@gustavosett.dev
-sleep 1
-gnome-extensions enable win11-clipboard-history@gustavosett.dev
-```
-
-Nếu vẫn không active, logout/login lại.
-
-## 10. Gỡ Cài Đặt
-
-Gỡ app `.deb`:
+Gỡ app đã cài từ `.deb`:
 
 ```bash
 sudo apt remove win11-clipboard-history
@@ -573,23 +77,180 @@ gnome-extensions disable win11-clipboard-history@gustavosett.dev
 rm -rf ~/.local/share/gnome-shell/extensions/win11-clipboard-history@gustavosett.dev
 ```
 
-Logout/login lại sau khi gỡ extension.
+### Tính Năng Chính
 
-## 11. Lệnh Thường Dùng Khi Phát Triển
+| Tính năng | Mô tả |
+| --- | --- |
+| Clipboard history | Lưu và tìm lại nội dung clipboard đã copy. |
+| `Super+V` | Mở popup clipboard nhanh. |
+| Wayland và X11 | Hỗ trợ cả hai session phổ biến trên Linux. |
+| GNOME Wayland pointer launcher | Mở popup tại vị trí con trỏ chuột bằng extension đi kèm. |
+| Auto paste | Chọn item và paste trực tiếp vào app đích. |
+| Terminal paste | Cấu hình app cần `Ctrl+Shift+V` thay vì `Ctrl+V`. |
+| Pin item | Ghim nội dung quan trọng lên đầu danh sách. |
+| Emoji picker | Tìm và paste emoji nhanh. |
+| Local-first | Dữ liệu clipboard được lưu trên máy, không gửi ra ngoài. |
 
-Build nhanh app release:
+### Phím Tắt
+
+| Phím | Hành động |
+| --- | --- |
+| `Super+V` | Mở Clipboard History |
+| `Ctrl+Alt+V` | Shortcut thay thế |
+| `Enter` | Paste item đang chọn |
+| `Esc` | Đóng cửa sổ |
+
+### Lỗi Thường Gặp
+
+`Super+V` không mở app:
+
+```bash
+pgrep -f win11-clipboard-history-bin
+```
+
+Nếu app đang chạy nhưng shortcut không hoạt động, mở lại Setup Wizard:
+
+```bash
+rm ~/.config/win11-clipboard-history/setup.json
+win11-clipboard-history
+```
+
+Chọn item nhưng không tự paste:
+
+```bash
+sudo modprobe uinput
+sudo setfacl -m u:$USER:rw /dev/uinput
+```
+
+Để quyền `/dev/uinput` ổn định hơn sau reboot:
+
+```bash
+sudo usermod -aG input "$USER"
+```
+
+Sau khi thêm user vào group `input`, logout/login lại.
+
+Terminal không paste đúng:
+
+Một số terminal cần `Ctrl+Shift+V`. Mở Settings trong app, vào:
+
+```text
+Paste Shortcuts -> Ctrl+Shift+V Targets
+```
+
+Thêm tên terminal, mỗi pattern một dòng, ví dụ:
+
+```text
+gnome-terminal
+kgx
+konsole
+alacritty
+kitty
+wezterm
+```
+
+## Dành Cho Developer
+
+Phần này dành cho người muốn chạy source, sửa code, build package local hoặc phát triển GNOME extension.
+
+Tech stack:
+
+- Rust
+- Tauri v2
+- React
+- TypeScript
+- Tailwind CSS
+- Linux desktop APIs
+
+### Chuẩn Bị Môi Trường
+
+```bash
+git clone https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux.git
+cd Windows-11-Clipboard-History-For-Linux
+make deps
+make rust
+make node
+source ~/.cargo/env
+npm ci
+```
+
+Kiểm tra phiên bản toolchain:
+
+```bash
+node --version
+npm --version
+rustc --version
+cargo --version
+```
+
+### Chạy Dev Mode
+
+```bash
+make dev
+```
+
+Hoặc:
+
+```bash
+npm run tauri:dev
+```
+
+### Kiểm Tra Trước Khi Build
+
+```bash
+npm run lint
+PATH="$HOME/.cargo/bin:$PATH" cargo fmt --manifest-path src-tauri/Cargo.toml --check
+PATH="$HOME/.cargo/bin:$PATH" cargo check --manifest-path src-tauri/Cargo.toml --locked
+```
+
+### Build File `.deb`
 
 ```bash
 PATH="$HOME/.cargo/bin:$PATH" npm run tauri:build -- --bundles deb
 ```
 
-Cài đè bản mới:
+File build ra nằm trong:
+
+```bash
+src-tauri/target/release/bundle/deb/
+```
+
+Cài lần đầu:
+
+```bash
+sudo apt install ./src-tauri/target/release/bundle/deb/win11-clipboard-history_0.7.1_amd64.deb
+```
+
+Cài đè cùng version khi đang phát triển:
 
 ```bash
 sudo dpkg -i ./src-tauri/target/release/bundle/deb/win11-clipboard-history_0.7.1_amd64.deb
+sudo apt -f install
 ```
 
-Restart app nền:
+### Cài GNOME Extension Từ Source
+
+```bash
+scripts/install-gnome-extension.sh
+gnome-extensions disable win11-clipboard-history@gustavosett.dev
+sleep 1
+gnome-extensions enable win11-clipboard-history@gustavosett.dev
+```
+
+Kiểm tra extension:
+
+```bash
+gnome-extensions info win11-clipboard-history@gustavosett.dev
+```
+
+Kết quả mong đợi:
+
+```text
+Enabled: Yes
+State: ACTIVE
+```
+
+### Restart App Nền Sau Khi Cài Đè
 
 ```bash
 pids=$(pgrep -f '^/usr/bin/win11-clipboard-history-bin' || true)
@@ -600,11 +261,24 @@ fi
 nohup /usr/bin/win11-clipboard-history --background >/tmp/win11-clipboard-history.log 2>&1 &
 ```
 
-Reload extension:
+Kiểm tra log:
 
 ```bash
-scripts/install-gnome-extension.sh
-gnome-extensions disable win11-clipboard-history@gustavosett.dev
-sleep 1
-gnome-extensions enable win11-clipboard-history@gustavosett.dev
+tail -n 120 /tmp/win11-clipboard-history.log
 ```
+
+### Debug GNOME Extension
+
+```bash
+journalctl --user -f -o cat | grep --line-buffered Win11ClipboardHistoryPointer
+```
+
+Khi bấm `Super+V`, log đúng thường có dạng:
+
+```text
+[Win11ClipboardHistoryPointer] keybinding fired at X, Y using win11-clipboard-history
+```
+
+## License
+
+MIT. Xem [LICENSE](LICENSE).
