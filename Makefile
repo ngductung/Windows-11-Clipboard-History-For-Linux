@@ -7,6 +7,7 @@
 
 SHELL := /bin/bash
 APP_NAME := win11-clipboard-history
+APP_COMMAND ?= win11-clipboard-history
 PREFIX ?= /usr/local
 LIBDIR := $(PREFIX)/lib
 BINDIR := $(PREFIX)/bin
@@ -36,7 +37,7 @@ RESET := \033[0m
 
 .PHONY: all help deps deps-ubuntu deps-debian deps-fedora deps-arch \
         rust node check-deps dev build install uninstall clean clean-first-run run \
-        lint format test release
+        lint format test release install-gnome-extension
 
 all: build
 
@@ -70,6 +71,7 @@ help:
 	@echo ""
 	@echo -e "$(GREEN)Installation:$(RESET)"
 	@echo "  make install     - Install to system (requires sudo)"
+	@echo "  make install-gnome-extension - Install GNOME Wayland pointer launcher"
 	@echo "  make uninstall   - Remove from system (requires sudo)"
 	@echo ""
 	@echo -e "$(GREEN)Maintenance:$(RESET)"
@@ -285,6 +287,10 @@ install:
 	@echo "The app will guide you through setup on first run."
 	@echo "You may need to log out and back in for input permissions to take effect."
 	@echo ""
+
+install-gnome-extension:
+	@echo -e "$(CYAN)Installing GNOME Wayland pointer launcher...$(RESET)"
+	bash scripts/install-gnome-extension.sh "$(APP_COMMAND)"
 
 uninstall:
 	@echo -e "$(CYAN)Uninstalling $(APP_NAME)...$(RESET)"

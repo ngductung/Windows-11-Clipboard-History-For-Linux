@@ -1,12 +1,34 @@
 # Dependencies
 node_modules/
-target/
+.pnpm-store/
 
 # Build outputs
 dist/
-src-tauri/target/
+build/
+out/
+coverage/
+*.tsbuildinfo
 
-# IDE
+# Rust / Tauri
+target/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/WixTools/
+
+# Environment
+.env
+.env.*
+!.env.example
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE / Editor
 .vscode/
 .idea/
 *.swp
@@ -17,23 +39,22 @@ src-tauri/target/
 .DS_Store
 Thumbs.db
 
-# Environment
-.env
+# Temporary files
+temp/
+
+# Local data and potentially sensitive artefacts
 .env.local
 .env.*.local
-
-# Logs
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Test
-coverage/
-
-# Tauri
-src-tauri/WixTools/
-src-tauri/Cargo.lock
-src-tauri/gen/
-
-temp/*
+*.trace
+*.crash
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx

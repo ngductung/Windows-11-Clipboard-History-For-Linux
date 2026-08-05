@@ -16,7 +16,9 @@ use win11_clipboard_history_lib::clipboard_manager::{ClipboardItem, ClipboardMan
 use win11_clipboard_history_lib::config_manager::{resolve_window_position, ConfigManager};
 use win11_clipboard_history_lib::emoji_manager::{EmojiManager, EmojiUsage};
 use win11_clipboard_history_lib::focus_manager::x11_robust_activate;
-use win11_clipboard_history_lib::focus_manager::{restore_focused_window, save_focused_window};
+use win11_clipboard_history_lib::focus_manager::{
+    clear_target_hint, restore_focused_window, save_focused_window, save_target_hint,
+};
 use win11_clipboard_history_lib::input_simulator::simulate_paste_keystroke;
 use win11_clipboard_history_lib::permission_checker;
 use win11_clipboard_history_lib::rendering_env;
@@ -33,6 +35,36 @@ static STARTED_IN_BACKGROUND: AtomicBool = AtomicBool::new(false);
 /// While false, background mode will still hide the window on focus
 /// After the first user toggle, this is set to true to allow normal show/hide behavior
 static INITIAL_SHOW_ALLOWED: AtomicBool = AtomicBool::new(false);
+
+fn parse_show_at_args(args: &[String]) -> Option<(i32, i32)> {
+    let idx = args.iter().position(|arg| arg == "--show-at")?;
+    let x = args.get(idx + 1)?.parse().ok()?;
+    let y = args.get(idx + 2)?.parse().ok()?;
+    Some((x, y))
+}
+
+fn parse_target_hint_args(args: &[String]) -> (Option<String>, Option<String>) {
+    fn value_after(args: &[String], flag: &str) -> Option<String> {
+        let idx = args.iter().position(|arg| arg == flag)?;
+        args.get(idx + 1)
+            .cloned()
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    (
+        value_after(args, "--target-app"),
+        value_after(args, "--target-title"),
+    )
+}
+
+fn apply_target_hint_args(args: &[String]) {
+    let (app_id, title) = parse_target_hint_args(args);
+    if app_id.is_some() || title.is_some() {
+        save_target_hint(app_id, title);
+    } else if is_wayland() {
+        clear_target_hint();
+    }
+}
 
 /// Application state shared across all handlers
 pub struct AppState {
@@ -128,6 +160,11 @@ fn is_settings_window_visible(app: AppHandle) -> bool {
     app.get_webview_window("settings")
         .map(|w| w.is_visible().unwrap_or(false))
         .unwrap_or(false)
+}
+
+#[tauri::command]
+fn hide_main_window(app: AppHandle) {
+    WindowController::hide(&app);
 }
 
 // --- Theme Detection Commands ---
@@ -386,9 +423,17 @@ impl WindowController {
         Self::toggle_with_tab(app, None);
     }
 
+    pub fn toggle_at(app: &AppHandle, x: i32, y: i32) {
+        Self::toggle_with_tab_at(app, None, Some((x, y)));
+    }
+
     /// Toggle window visibility with optional tab selection
     /// If tab is Some("emoji"), it will emit an event to switch to the emoji tab
     pub fn toggle_with_tab(app: &AppHandle, tab: Option<&str>) {
+        Self::toggle_with_tab_at(app, tab, None);
+    }
+
+    fn toggle_with_tab_at(app: &AppHandle, tab: Option<&str>, show_at: Option<(i32, i32)>) {
         // User-initiated toggle - mark that we're now allowing shows
         // This stops the background enforcer from hiding the window
         if STARTED_IN_BACKGROUND.load(Ordering::SeqCst) {
@@ -402,7 +447,7 @@ impl WindowController {
                 if let Some(tab_name) = tab {
                     let _ = app.emit("switch-tab", tab_name);
                 } else {
-                    let _ = window.hide();
+                    Self::hide_window(&window);
                 }
             } else {
                 save_focused_window();
@@ -424,7 +469,10 @@ impl WindowController {
                     }
                 }
 
-                Self::position_and_show(&window, app);
+                match show_at {
+                    Some((x, y)) => Self::position_and_show_at(&window, app, x, y),
+                    None => Self::position_and_show(&window, app),
+                }
             }
         }
     }
@@ -437,7 +485,17 @@ impl WindowController {
                     state.config_manager.lock().sync_to_disk();
                 }
             }
-            let _ = window.hide();
+            Self::hide_window(&window);
+        }
+    }
+
+    fn hide_window(window: &WebviewWindow) {
+        let _ = window.set_always_on_top(false);
+        let _ = window.hide();
+
+        if is_wayland() {
+            let offscreen = PhysicalPosition::new(-20_000, -20_000);
+            let _ = window.set_position(offscreen);
         }
     }
 
@@ -452,10 +510,20 @@ impl WindowController {
 
         let is_wayland_session = is_wayland();
 
+        Self::show_positioned(window, app, is_wayland_session);
+    }
+
+    fn position_and_show_at(window: &WebviewWindow, app: &AppHandle, x: i32, y: i32) {
+        Self::position_at(window, x, y);
+        Self::show_positioned(window, app, is_wayland());
+    }
+
+    fn show_positioned(window: &WebviewWindow, app: &AppHandle, is_wayland_session: bool) {
         if is_wayland_session {
-            // Wayland needs to be born "On Top" to be visible
-            let _ = window.show();
+            // Wayland is less prone to visible restacking when the window is
+            // already topmost before it is mapped.
             let _ = window.set_always_on_top(true);
+            let _ = window.show();
             let _ = window.set_focus();
         } else {
             // X11 born as normal window.
@@ -463,16 +531,13 @@ impl WindowController {
             let _ = window.show();
         }
 
-        let window_clone = window.clone();
         let app_clone = app.clone();
 
         std::thread::spawn(move || {
             // For Wayland, we still need a small delay for the compositor
             // For X11, we use polling-based wait instead of fixed sleep
             if is_wayland_session {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                let _ = window_clone.set_always_on_top(false);
-                let _ = window_clone.set_focus();
+                std::thread::sleep(std::time::Duration::from_millis(30));
             } else {
                 // Use EWMH _NET_ACTIVE_WINDOW protocol with polling instead of fixed sleep.
                 // This waits for the window to actually appear in X11's client list
@@ -544,6 +609,17 @@ impl WindowController {
         }
     }
 
+    fn position_at(window: &WebviewWindow, x: i32, y: i32) {
+        let target_monitor = Self::find_monitor_containing(window, x, y)
+            .or_else(|| window.current_monitor().ok().flatten())
+            .or_else(|| window.primary_monitor().ok().flatten());
+
+        if let Some(monitor) = target_monitor {
+            let pos = Self::clamp_window_to_monitor(window, &monitor, x, y);
+            let _ = window.set_position(pos);
+        }
+    }
+
     fn find_monitor_containing(window: &WebviewWindow, x: i32, y: i32) -> Option<Monitor> {
         window.available_monitors().ok()?.into_iter().find(|m| {
             let p = m.position();
@@ -562,12 +638,13 @@ impl WindowController {
         let m_pos = monitor.position();
         let m_size = monitor.size();
 
-        let max_x = m_pos.x + m_size.width as i32 - win_size.width as i32;
-        let max_y = m_pos.y + m_size.height as i32 - win_size.height as i32;
+        let min_x = m_pos.x + 10;
+        let min_y = m_pos.y + 10;
+        let max_x = (m_pos.x + m_size.width as i32 - win_size.width as i32 - 10).max(min_x);
+        let max_y = (m_pos.y + m_size.height as i32 - win_size.height as i32 - 10).max(min_y);
 
-        // Clamp with 10px padding
-        let safe_x = x.clamp(m_pos.x + 10, max_x - 10);
-        let safe_y = y.clamp(m_pos.y + 10, max_y - 10);
+        let safe_x = x.clamp(min_x, max_x);
+        let safe_y = y.clamp(min_y, max_y);
 
         PhysicalPosition::new(safe_x, safe_y)
     }
@@ -777,6 +854,7 @@ fn main() {
         println!("        --background Start minimized to system tray (for autostart)");
         println!("        --settings   Open settings window on startup");
         println!("        --emoji      Open with emoji picker tab selected");
+        println!("        --show-at X Y Open clipboard history at screen coordinates");
         println!();
         println!("SHORTCUTS:");
         println!("    Super+V          Open clipboard history");
@@ -801,12 +879,15 @@ fn main() {
 
     // Check if --emoji flag is present (open with emoji tab)
     let open_emoji_on_start = args.iter().any(|arg| arg == "--emoji");
+    let show_at_on_start = parse_show_at_args(&args);
 
     // Clone for use in setup closure
     let start_in_background_clone = start_in_background;
     let open_emoji_on_start_clone = open_emoji_on_start;
+    let show_at_on_start_clone = show_at_on_start;
 
     win11_clipboard_history_lib::session::init();
+    apply_target_hint_args(&args);
 
     let is_mouse_inside = Arc::new(AtomicBool::new(false));
     let base_dir = dirs::data_local_dir()
@@ -838,12 +919,20 @@ fn main() {
         // Single Instance Plugin: When user triggers shortcut and app is already running,
         // the OS launches a new instance which signals the existing one to toggle
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            apply_target_hint_args(&argv);
+
             // Check if --settings flag is present
             if argv.iter().any(|arg| arg == "--settings") {
                 println!(
                     "[SingleInstance] Secondary instance with --settings flag, opening settings..."
                 );
                 SettingsController::show(app);
+            } else if let Some((x, y)) = parse_show_at_args(&argv) {
+                println!(
+                    "[SingleInstance] Secondary instance with --show-at {}, {}, opening at pointer...",
+                    x, y
+                );
+                WindowController::toggle_at(app, x, y);
             } else if argv.iter().any(|arg| arg == "--emoji") {
                 println!(
                     "[SingleInstance] Secondary instance with --emoji flag, opening emoji picker..."
@@ -888,7 +977,7 @@ fn main() {
             // This runs before anything else to prevent the window from appearing
             if start_in_background_clone {
                 if let Some(main_window) = app.get_webview_window("main") {
-                    let _ = main_window.hide();
+                    WindowController::hide_window(&main_window);
                     println!("[Setup] Immediately hiding main window for background mode");
                 }
             }
@@ -977,14 +1066,11 @@ fn main() {
                     // immediately hide the window
                     if started_in_background && !initial_show_allowed {
                         println!("[WindowController] Background mode: intercepted focus, hiding window");
-                        let _ = w_clone.hide();
+                        WindowController::hide_window(&w_clone);
                     }
                 }
                 WindowEvent::Focused(false) => {
                     let state = w_clone.state::<AppState>();
-                    if state.is_mouse_inside.load(Ordering::Relaxed) {
-                        return;
-                    }
 
                     // Don't hide if settings window is visible (for live preview)
                     if let Some(settings_window) =
@@ -999,7 +1085,7 @@ fn main() {
                         state.config_manager.lock().sync_to_disk();
                     }
 
-                    let _ = w_clone.hide();
+                    WindowController::hide_window(&w_clone);
                 }
 
                 WindowEvent::Moved(pos) => {
@@ -1039,6 +1125,10 @@ fn main() {
                 });
             }
 
+            if let Some((x, y)) = show_at_on_start_clone {
+                WindowController::toggle_at(&app_handle, x, y);
+            }
+
             // If --background flag was passed, ensure the main window stays hidden
             // This is the primary mechanism for starting minimized to tray
             // Background mode: spawn enforcer thread as fallback
@@ -1062,7 +1152,7 @@ fn main() {
                             match window_clone.is_visible() {
                                 Ok(true) => {
                                     println!("[Startup] Background enforcer #{}: window was visible, hiding again", i + 1);
-                                    let _ = window_clone.hide();
+                                    WindowController::hide_window(&window_clone);
                                 }
                                 Ok(false) => {} // Window exists but is hidden, nothing to do
                                 Err(_) => break, // Window was destroyed, stop the enforcer
@@ -1090,6 +1180,7 @@ fn main() {
             get_user_settings,
             set_user_settings,
             is_settings_window_visible,
+            hide_main_window,
             copy_text_to_clipboard,
             get_system_theme,
             refresh_system_theme,

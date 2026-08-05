@@ -2,7 +2,9 @@
 //! Tracks and restores window focus for proper paste injection on X11.
 //! Also provides X11 window activation using EWMH protocols.
 
+use parking_lot::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
@@ -15,11 +17,24 @@ const FOCUS_RESTORE_TIMEOUT: Duration = Duration::from_millis(750);
 
 /// Stores the ID of the window that had focus before we opened
 static LAST_FOCUSED_WINDOW: AtomicU32 = AtomicU32::new(0);
+static LAST_TARGET_HINT: OnceLock<Mutex<Option<TargetWindowHint>>> = OnceLock::new();
+
+#[derive(Debug, Clone, Default)]
+struct TargetWindowHint {
+    app_id: Option<String>,
+    title: Option<String>,
+}
+
+fn target_hint() -> &'static Mutex<Option<TargetWindowHint>> {
+    LAST_TARGET_HINT.get_or_init(|| Mutex::new(None))
+}
 
 pub fn save_focused_window() {
     if !crate::session::is_x11() {
         return;
     }
+
+    *target_hint().lock() = None;
 
     // Never reuse a target captured for an older popup invocation if this
     // query fails. Pasting nowhere is safer than redirecting input to a stale
@@ -29,10 +44,52 @@ pub fn save_focused_window() {
     match crate::paste_sync::focused_window() {
         Some(window_id) => {
             LAST_FOCUSED_WINDOW.store(window_id, Ordering::SeqCst);
+            *target_hint().lock() = x11_window_hint(window_id);
             eprintln!("[FocusManager] Saved focused window: {}", window_id);
         }
         None => eprintln!("[FocusManager] Failed to query the focused X11 window"),
     }
+}
+
+pub fn clear_target_hint() {
+    *target_hint().lock() = None;
+}
+
+pub fn save_target_hint(app_id: Option<String>, title: Option<String>) {
+    let normalized = TargetWindowHint {
+        app_id: app_id.and_then(non_empty),
+        title: title.and_then(non_empty),
+    };
+
+    if normalized.app_id.is_some() || normalized.title.is_some() {
+        eprintln!(
+            "[FocusManager] Saved target hint: app_id={:?}, title={:?}",
+            normalized.app_id, normalized.title
+        );
+        *target_hint().lock() = Some(normalized);
+    }
+}
+
+pub fn target_matches_any_pattern(patterns: &[String]) -> bool {
+    let hint = target_hint().lock().clone();
+    let Some(hint) = hint else {
+        return false;
+    };
+
+    patterns.iter().any(|pattern| {
+        let pattern = pattern.trim().to_ascii_lowercase();
+        if pattern.is_empty() {
+            return false;
+        }
+
+        hint.app_id
+            .as_deref()
+            .is_some_and(|value| value.to_ascii_lowercase().contains(&pattern))
+            || hint
+                .title
+                .as_deref()
+                .is_some_and(|value| value.to_ascii_lowercase().contains(&pattern))
+    })
 }
 
 pub fn restore_focused_window() -> Result<bool, String> {
@@ -49,6 +106,88 @@ pub fn restore_focused_window() -> Result<bool, String> {
 
 pub fn get_focused_window() -> Option<u32> {
     crate::paste_sync::focused_window()
+}
+
+fn non_empty(value: String) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn x11_window_hint(window_id: u32) -> Option<TargetWindowHint> {
+    let (conn, _) = x11rb::connect(None).ok()?;
+    let app_id = x11_window_class(&conn, window_id);
+    let title = x11_window_title(&conn, window_id);
+
+    if app_id.is_some() || title.is_some() {
+        Some(TargetWindowHint { app_id, title })
+    } else {
+        None
+    }
+}
+
+fn x11_window_class<C: Connection>(conn: &C, window_id: u32) -> Option<String> {
+    let reply = conn
+        .get_property(
+            false,
+            window_id,
+            AtomEnum::WM_CLASS,
+            AtomEnum::STRING,
+            0,
+            256,
+        )
+        .ok()?
+        .reply()
+        .ok()?;
+    let raw = String::from_utf8(reply.value).ok()?;
+    let class = raw
+        .split('\0')
+        .filter(|part| !part.trim().is_empty())
+        .last()
+        .or_else(|| raw.split('\0').find(|part| !part.trim().is_empty()))?;
+    Some(class.to_string())
+}
+
+fn x11_window_title<C: Connection>(conn: &C, window_id: u32) -> Option<String> {
+    let net_wm_name = conn
+        .intern_atom(false, b"_NET_WM_NAME")
+        .ok()?
+        .reply()
+        .ok()?
+        .atom;
+    let utf8_string = conn
+        .intern_atom(false, b"UTF8_STRING")
+        .ok()?
+        .reply()
+        .ok()?
+        .atom;
+
+    if let Ok(cookie) = conn.get_property(false, window_id, net_wm_name, utf8_string, 0, 256) {
+        if let Ok(reply) = cookie.reply() {
+            if let Ok(name) = String::from_utf8(reply.value) {
+                if !name.trim().is_empty() {
+                    return Some(name);
+                }
+            }
+        }
+    }
+
+    conn.get_property(
+        false,
+        window_id,
+        AtomEnum::WM_NAME,
+        AtomEnum::STRING,
+        0,
+        256,
+    )
+    .ok()?
+    .reply()
+    .ok()
+    .and_then(|reply| String::from_utf8(reply.value).ok())
+    .and_then(non_empty)
 }
 
 // =============================================================================

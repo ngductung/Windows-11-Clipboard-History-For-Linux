@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.win11-clipboard-history" path="/org/gnome/shell/extensions/win11-clipboard-history/">
+    <key name="toggle-clipboard" type="as">
+      <default>['&lt;Super&gt;v']</default>
+      <summary>Open clipboard history</summary>
+      <description>Keyboard shortcut that opens the clipboard history window at the current pointer position.</description>
+    </key>
+    <key name="command" type="s">
+      <default>'win11-clipboard-history'</default>
+      <summary>Application command</summary>
+      <description>Command used to launch Windows 11 Clipboard History. Arguments are appended by the extension.</description>
+    </key>
+  </schema>
+</schemalist>

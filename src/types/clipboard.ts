@@ -76,6 +76,7 @@ export interface UserSettings {
   auto_delete_unit: 'minutes' | 'hours' | 'days' | 'weeks'
   custom_kaomojis: CustomKaomoji[]
   ui_scale: number
+  ctrl_shift_v_paste_targets: string[]
 }
 
 /** Helper type for boolean settings keys */

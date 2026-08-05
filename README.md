@@ -1,258 +1,610 @@
-<div align="center">
-
-<img width="52" height="52" alt="logo" src="https://github.com/user-attachments/assets/4534e915-5d83-45f3-9f09-48a0f94b1d9a" />
-
-
 # Windows 11 Clipboard History For Linux
 
-[Website](https://clipboard.gustavosett.dev) • [Report Bug](https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/issues) • [Request Feature](https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/discussions/new?category=ideas)
+Tài liệu này gồm 2 phần:
 
-**The aesthetic, feature-rich clipboard manager your Linux desktop deserves.**
+- Phần 1: dành cho người dùng cuối (end-user), cài đặt từ file `.deb` đã phát hành.
+- Phần 2: dành cho developer, build và cài đặt từ source trên Ubuntu/Debian GNOME Wayland.
 
-[![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
-[![Total Downloads](https://img.shields.io/endpoint?url=https://clipboard.gustavosett.workers.dev/&style=for-the-badge&logo=cloudsmith&logoColor=white)](https://broadcasts.cloudsmith.com/gustavosett/clipboard-manager)
-[![Tauri](https://img.shields.io/badge/Built_With-Tauri_v2-24C8D6?style=for-the-badge&logo=tauri&logoColor=white)](https://tauri.app/)
-[![Rust](https://img.shields.io/badge/Powered_By-Rust-000000?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+## 1. Hướng Dẫn Cho Người Dùng
 
-![App Screenshot](https://github.com/user-attachments/assets/74400c8b-9d7d-49ce-8de7-45dfd556e256)
+Nếu bạn chỉ cần dùng app, hãy tải file `.deb` từ trang Release của dự án, sau đó cài đặt theo các bước sau:
 
-</div>
-
----
-
-## ⚡ Quick Start (Recommended)
-
-Get up and running in seconds. This script detects your distro, installs the app, and configures permissions automatically.
+1. Tải file `.deb` về máy, ví dụ vào thư mục `Downloads`.
+2. Mở terminal tại thư mục chứa file `.deb`:
 
 ```bash
-# Just copy and paste this into your terminal
-curl -fsSL https://raw.githubusercontent.com/gustavosett/Windows-11-Clipboard-History-For-Linux/master/scripts/install.sh | bash
+cd ~/Downloads
 ```
 
-> **Note:** No logout required! The installer uses ACLs to grant immediate access.
-
----
-
-## 🌟 Why use this?
-
-Most Linux clipboard managers are purely functional but lack visual appeal. This project brings the **modern, fluid design of Windows 11's clipboard history** to the Linux ecosystem, backed by the blazing speed of Rust.
-
-| 😎 | 🔍 |
-| --- | --- |
-| **🐧 Universal Support** | Works flawlessly on both **Wayland** & **X11**. |
-| **⚡ Instant Access** | Opens instantly with `Super+V` or `Ctrl+Alt+V`. |
-| **🧠 Smart Positioning** | The window follows your mouse cursor across multiple monitors. |
-| **📌 Pin & Sync** | Pin important snippets to keep them at the top. |
-| **🎬 ~~GIF Integration~~** | ~~Search Tenor and paste GIFs directly into Discord, Slack, etc.~~ **Disabled:** [Google killed the Tenor GIF API](https://arstechnica.com/gadgets/2026/06/google-kills-tenor-gif-api-forcing-changes-at-x-discord-and-more/). |
-| **🤩 Emoji Picker** | A built-in, searchable emoji keyboard. |
-| **🛡️ Privacy First** | Your history is stored locally. No data leaves your machine. |
-
----
-
-## ⌨️ Shortcuts & Usage
-
-| Key | Action |
-| --- | --- |
-| <kbd>Super</kbd> + <kbd>V</kbd> | **Open Clipboard History** |
-| <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>V</kbd> | Alternative Shortcut |
-| <kbd>Enter</kbd> | Paste Selected Item |
-| <kbd>Esc</kbd> | Close Window |
-
-> ~~**Pro Tip:** Need to paste a GIF? Just select it!~~ **The GIF tab is currently disabled because Google killed the Tenor API.** The implementation remains in the source tree so a sustainable provider can be integrated later. [Read what happened](https://arstechnica.com/gadgets/2026/06/google-kills-tenor-gif-api-forcing-changes-at-x-discord-and-more/).
-
----
-
-## 📦 Detailed Installation
-
-Prefer to install manually? We support all major distributions.
-
-<details>
-<summary><b>Debian / Ubuntu / Mint / Pop!_OS</b></summary>
-
-> **Recommended:** Use the APT repository for automatic updates.
+3. Cài đặt package:
 
 ```bash
-# 1. Add Repository
-curl -1sLf 'https://dl.cloudsmith.io/public/gustavosett/clipboard-manager/setup.deb.sh' | sudo -E bash
+sudo apt install ./win11-clipboard-history_*.deb
+```
 
-# 2. Install
-sudo apt update && sudo apt install win11-clipboard-history
+Nếu hệ thống báo lỗi về dependency chưa được cài, chạy tiếp:
 
-# 3. Grant Permissions (One-time)
+```bash
+sudo apt -f install
+```
+
+4. Sau khi cài xong, mở ứng dụng từ menu ứng dụng hoặc chạy:
+
+```bash
+win11-clipboard-history --help
+```
+
+5. Nếu bạn dùng Wayland và muốn app tự paste vào ứng dụng đích, có thể cần cấp quyền `/dev/uinput` như hướng dẫn ở phần developer bên dưới.
+
+## 2. Hướng Dẫn Cho Developer
+
+Phần này dành cho việc build từ source và cài đặt thủ công trên Ubuntu/Debian GNOME Wayland.
+
+### 2.1. Yêu Cầu Hệ Thống
+
+Kiểm tra session hiện tại:
+
+```bash
+echo "$XDG_SESSION_TYPE"
+gnome-shell --version
+```
+
+Nếu `XDG_SESSION_TYPE=wayland`, nên cài GNOME extension trong repo này để popup có thể mở tại vị trí con trỏ chuột.
+
+### 2.2. Cài Dependency Build
+
+Từ thư mục source:
+
+```bash
+cd /duong/dan/toi/Windows-11-Clipboard-History-For-Linux
+make deps
+make rust
+make node
+source "$HOME/.cargo/env"
+npm ci
+```
+
+Kiểm tra nhanh:
+
+```bash
+node --version
+npm --version
+rustc --version
+cargo --version
+```
+
+Nếu máy đã có Node.js/Rust sẵn, `make rust` và `make node` có thể báo đã cài sẵn, điều đó bình thường.
+
+### 2.3. Build File `.deb`
+
+Chạy verify trước khi build:
+
+```bash
+npm run lint
+PATH="$HOME/.cargo/bin:$PATH" cargo fmt --manifest-path src-tauri/Cargo.toml --check
+PATH="$HOME/.cargo/bin:$PATH" cargo check --manifest-path src-tauri/Cargo.toml --locked
+```
+
+Build package `.deb`:
+
+```bash
+PATH="$HOME/.cargo/bin:$PATH" npm run tauri:build -- --bundles deb
+```
+
+File `.deb` sẽ nằm tại:
+
+```bash
+src-tauri/target/release/bundle/deb/
+```
+
+Ví dụ:
+
+```bash
+ls -lh src-tauri/target/release/bundle/deb/*.deb
+```
+
+### 2.4. Cài Đặt File `.deb`
+
+Cài lần đầu bằng `apt`:
+
+```bash
+sudo apt install ./src-tauri/target/release/bundle/deb/win11-clipboard-history_0.7.1_amd64.deb
+```
+
+Nếu đang cài đè cùng version, `apt` có thể báo package đã là newest version. Khi đó dùng `dpkg -i` để ép ghi đè binary mới:
+
+```bash
+sudo dpkg -i ./src-tauri/target/release/bundle/deb/win11-clipboard-history_0.7.1_amd64.deb
+sudo apt -f install
+```
+
+Kiểm tra binary:
+
+```bash
+which win11-clipboard-history
+win11-clipboard-history --help
+```
+
+Nếu đang debug tính năng mở theo tọa độ, output `--help` cần có flag:
+
+```text
+--show-at X Y
+```
+
+### 2.5. Cấp Quyền Tự Paste Bằng `/dev/uinput`
+
+Trên Wayland, app cần `/dev/uinput` để mô phỏng phím paste. Nếu chọn item chỉ copy vào clipboard nhưng không tự paste, chạy:
+
+```bash
+sudo modprobe uinput
 sudo setfacl -m u:$USER:rw /dev/uinput
-
 ```
 
-</details>
-
-<details>
-<summary><b>Fedora / RHEL / CentOS</b></summary>
+Để quyền bền hơn sau reboot:
 
 ```bash
-# 1. Add Repository
-curl -1sLf 'https://dl.cloudsmith.io/public/gustavosett/clipboard-manager/setup.rpm.sh' | sudo -E bash
+sudo usermod -aG input "$USER"
+```
 
-# 2. Install
-sudo dnf install win11-clipboard-history
+Sau khi thêm user vào group `input`, logout/login lại.
 
-# 3. Grant Permissions (One-time)
+Kiểm tra:
+
+```bash
+ls -l /dev/uinput
+getfacl /dev/uinput
+groups
+```
+
+### 2.6. Cài GNOME Extension
+
+Extension nằm trong:
+
+```bash
+gnome-extension/win11-clipboard-history@gustavosett.dev
+```
+
+Nó bắt `Super+V`, lấy vị trí con trỏ chuột từ GNOME Shell, rồi gọi:
+
+```bash
+win11-clipboard-history --show-at X Y
+```
+
+Cài dependency cho extension:
+
+```bash
+sudo apt install -y libglib2.0-bin gnome-shell-extension-prefs
+```
+
+Cài extension từ thư mục source:
+
+```bash
+scripts/install-gnome-extension.sh
+```
+
+Hoặc dùng Makefile:
+
+```bash
+make install-gnome-extension
+```
+
+Nếu command app không phải `win11-clipboard-history`, truyền command rõ ràng:
+
+```bash
+scripts/install-gnome-extension.sh "/duong/dan/toi/win11-clipboard-history"
+```
+
+Script sẽ:
+
+- Copy extension vào `~/.local/share/gnome-shell/extensions/win11-clipboard-history@gustavosett.dev`.
+- Compile schema bằng `glib-compile-schemas`.
+- Set command app trong gsettings của extension.
+- Giải phóng `Super+V` khỏi shortcut notification tray của GNOME nếu cần.
+- Disable shortcut custom cũ của app nếu nó đang chiếm `Super+V`.
+- Enable extension nếu `gnome-extensions` khả dụng.
+
+Reload extension:
+
+```bash
+gnome-extensions disable win11-clipboard-history@gustavosett.dev
+sleep 1
+gnome-extensions enable win11-clipboard-history@gustavosett.dev
+```
+
+Kiểm tra:
+
+```bash
+gnome-extensions info win11-clipboard-history@gustavosett.dev
+```
+
+Kết quả mong đợi:
+
+```text
+
+Nếu bạn chỉ cần dùng app, hãy tải file `.deb` từ trang Release của dự án, sau đó cài đặt theo các bước sau:
+
+1. Tải file `.deb` về máy, ví dụ vào thư mục `Downloads`.
+2. Mở terminal tại thư mục chứa file `.deb`:
+
+```bash
+cd ~/Downloads
+```
+
+3. Cài đặt package:
+
+```bash
+sudo apt install ./win11-clipboard-history_*.deb
+```
+
+Nếu hệ thống báo lỗi về dependency chưa được cài, chạy tiếp:
+
+```bash
+sudo apt -f install
+```
+
+4. Sau khi cài xong, mở ứng dụng từ menu ứng dụng hoặc chạy:
+
+```bash
+win11-clipboard-history --help
+```
+
+5. Nếu bạn dùng Wayland và muốn app tự paste vào ứng dụng đích, có thể cần cấp quyền `/dev/uinput` như hướng dẫn bên dưới.
+
+## 1. Yêu Cầu Hệ Thống
+
+Kiểm tra session hiện tại:
+
+```bash
+echo "$XDG_SESSION_TYPE"
+gnome-shell --version
+```
+
+Nếu `XDG_SESSION_TYPE=wayland`, nên cài GNOME extension trong repo này để popup có thể mở tại vị trí con trỏ chuột.
+
+## 2. Cài Dependency Build
+
+Từ thư mục source:
+
+```bash
+cd /duong/dan/toi/Windows-11-Clipboard-History-For-Linux
+make deps
+make rust
+make node
+source "$HOME/.cargo/env"
+npm ci
+```
+
+Kiểm tra nhanh:
+
+```bash
+node --version
+npm --version
+rustc --version
+cargo --version
+```
+
+Nếu máy đã có Node.js/Rust sẵn, `make rust` và `make node` có thể báo đã cài sẵn, điều đó bình thường.
+
+## 3. Build File `.deb`
+
+Chạy verify trước khi build:
+
+```bash
+npm run lint
+PATH="$HOME/.cargo/bin:$PATH" cargo fmt --manifest-path src-tauri/Cargo.toml --check
+PATH="$HOME/.cargo/bin:$PATH" cargo check --manifest-path src-tauri/Cargo.toml --locked
+```
+
+Build package `.deb`:
+
+```bash
+PATH="$HOME/.cargo/bin:$PATH" npm run tauri:build -- --bundles deb
+```
+
+File `.deb` sẽ nằm tại:
+
+```bash
+src-tauri/target/release/bundle/deb/
+```
+
+Ví dụ:
+
+```bash
+ls -lh src-tauri/target/release/bundle/deb/*.deb
+```
+
+## 4. Cài Đặt File `.deb`
+
+Cài lần đầu bằng `apt`:
+
+```bash
+sudo apt install ./src-tauri/target/release/bundle/deb/win11-clipboard-history_0.7.1_amd64.deb
+```
+
+Nếu đang cài đè cùng version, `apt` có thể báo package đã là newest version. Khi đó dùng `dpkg -i` để ép ghi đè binary mới:
+
+```bash
+sudo dpkg -i ./src-tauri/target/release/bundle/deb/win11-clipboard-history_0.7.1_amd64.deb
+sudo apt -f install
+```
+
+Kiểm tra binary:
+
+```bash
+which win11-clipboard-history
+win11-clipboard-history --help
+```
+
+Nếu đang debug tính năng mở theo tọa độ, output `--help` cần có flag:
+
+```text
+--show-at X Y
+```
+
+## 5. Cấp Quyền Tự Paste Bằng `/dev/uinput`
+
+Trên Wayland, app cần `/dev/uinput` để mô phỏng phím paste. Nếu chọn item chỉ copy vào clipboard nhưng không tự paste, chạy:
+
+```bash
+sudo modprobe uinput
 sudo setfacl -m u:$USER:rw /dev/uinput
-
 ```
 
-</details>
-
-<details>
-<summary><b>Arch Linux (AUR)</b></summary>
+Để quyền bền hơn sau reboot:
 
 ```bash
-# Using yay
-yay -S win11-clipboard-history-bin
-
-# Or using paru
-paru -S win11-clipboard-history-bin
-
+sudo usermod -aG input "$USER"
 ```
 
-</details>
+Sau khi thêm user vào group `input`, logout/login lại.
 
-<details>
-<summary><b>AppImage (Universal)</b></summary>
+Kiểm tra:
 
-> ## Some features are disabled; we strongly recommend the complete installation.
-
-1. Download the `.AppImage` from [Releases](https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/releases).
-2. Make it executable: `chmod +x win11-clipboard-history_*.AppImage`
-3. Grant permissions: `sudo setfacl -m u:$USER:rw /dev/uinput`
-4. Register the command that you want in your system to open the AppImage
-```
-KEYBOARD SETTINGS -> SHORTCUTS -> NEW SHORTCUT -> Super+V -> ./my_awesome_folder/win11-clipboard-history.AppImage
-```
-
-</details>
-
----
-
-## 🔧 Troubleshooting
-
-<details>
-<summary><b>Shortcut (Super+V) isn't working</b></summary>
-
-1. Ensure the app is running: `pgrep -f win11-clipboard-history-bin`
-2. If running, try resetting the config:
 ```bash
-rm ~/.config/win11-clipboard-history/setup.json
+ls -l /dev/uinput
+getfacl /dev/uinput
+groups
+```
+
+## 6. Cài GNOME Extension
+
+Extension nằm trong:
+
+```bash
+gnome-extension/win11-clipboard-history@gustavosett.dev
+```
+
+Nó bắt `Super+V`, lấy vị trí con trỏ chuột từ GNOME Shell, rồi gọi:
+
+```bash
+win11-clipboard-history --show-at X Y
+```
+
+Cài dependency cho extension:
+
+```bash
+sudo apt install -y libglib2.0-bin gnome-shell-extension-prefs
+```
+
+Cài extension từ thư mục source:
+
+```bash
+scripts/install-gnome-extension.sh
+```
+
+Hoặc dùng Makefile:
+
+```bash
+make install-gnome-extension
+```
+
+Nếu command app không phải `win11-clipboard-history`, truyền command rõ ràng:
+
+```bash
+scripts/install-gnome-extension.sh "/usr/bin/win11-clipboard-history"
+```
+
+Script sẽ:
+
+- Copy extension vào `~/.local/share/gnome-shell/extensions/win11-clipboard-history@gustavosett.dev`.
+- Compile schema bằng `glib-compile-schemas`.
+- Set command app trong gsettings của extension.
+- Giải phóng `Super+V` khỏi shortcut notification tray của GNOME nếu cần.
+- Disable shortcut custom cũ của app nếu nó đang chiếm `Super+V`.
+- Enable extension nếu `gnome-extensions` khả dụng.
+
+Reload extension:
+
+```bash
+gnome-extensions disable win11-clipboard-history@gustavosett.dev
+sleep 1
+gnome-extensions enable win11-clipboard-history@gustavosett.dev
+```
+
+Kiểm tra:
+
+```bash
+gnome-extensions info win11-clipboard-history@gustavosett.dev
+```
+
+Kết quả mong đợi:
+
+```text
+Enabled: Yes
+State: ACTIVE
+```
+
+Nếu `Super+V` chưa trigger sau khi cài/reload, logout/login lại để GNOME Shell nạp lại extension và schema.
+
+## 7. Chạy App Nền
+
+Dừng process cũ nếu đang chạy:
+
+```bash
+pids=$(pgrep -f '^/usr/bin/win11-clipboard-history-bin' || true)
+if [ -n "$pids" ]; then
+  kill $pids
+  sleep 2
+fi
+```
+
+Chạy app ở background:
+
+```bash
+nohup /usr/bin/win11-clipboard-history --background >/tmp/win11-clipboard-history.log 2>&1 &
+```
+
+Kiểm tra:
+
+```bash
+pgrep -af '^/usr/bin/win11-clipboard-history-bin'
+tail -n 120 /tmp/win11-clipboard-history.log
+```
+
+## 8. Test Sau Khi Cài
+
+1. Copy một đoạn text bất kỳ.
+2. Click vào ô nhập text của app đích.
+3. Đưa chuột đến vị trí muốn hiện popup.
+4. Bấm `Super+V`.
+5. Popup phải hiện gần vị trí con trỏ chuột.
+6. Chọn item trong history.
+7. Item phải được paste vào app đích.
+
+Với terminal, app có thể cần paste bằng `Ctrl+Shift+V`. Cấu hình trong Settings:
+
+```text
+Paste Shortcuts -> Ctrl+Shift+V Targets
+```
+
+Mỗi pattern một dòng, ví dụ:
+
+```text
+terminal
+gnome-terminal
+kgx
+konsole
+alacritty
+kitty
+wezterm
+tilix
+terminator
+xterm
+```
+
+## 9. Debug Nhanh
+
+### Popup không mở tại vị trí con trỏ
+
+Xem log GNOME extension:
+
+```bash
+journalctl --user -f -o cat | grep --line-buffered Win11ClipboardHistoryPointer
+```
+
+Khi bấm `Super+V`, log đúng sẽ có dạng:
+
+```text
+[Win11ClipboardHistoryPointer] keybinding fired at X, Y using win11-clipboard-history
+```
+
+Nếu không có `keybinding fired`, extension chưa bắt được shortcut hoặc shortcut bị ứng dụng khác chiếm.
+
+### App không tự paste
+
+Chạy app từ terminal để xem log:
+
+```bash
+pids=$(pgrep -f '^/usr/bin/win11-clipboard-history-bin' || true)
+if [ -n "$pids" ]; then
+  kill $pids
+  sleep 2
+fi
 win11-clipboard-history
-
 ```
 
+Chọn item trong popup. Log đúng thường có:
 
-3. **Conflicts:** GNOME and other DEs often reserve `Super+V`. The app's **Setup Wizard** usually fixes this, but you can manually unbind `Super+V` in your system keyboard settings.
+```text
+[SimulatePaste] Sending Ctrl+V...
+[uinput] Persistent virtual keyboard is ready
+[SimulatePaste] Ctrl+V sent via uinput
+```
 
-</details>
-
-<details>
-<summary><b>Transparency Issues (NVIDIA / AppImage)</b></summary>
-
-If you see a black background or flickering, use the compatibility mode:
+Nếu log báo lỗi `/dev/uinput`, chạy lại:
 
 ```bash
-# Force NVIDIA workaround
-IS_NVIDIA=1 win11-clipboard-history
-
-# Force AppImage workaround
-IS_APPIMAGE=1 win11-clipboard-history
-
+sudo modprobe uinput
+sudo setfacl -m u:$USER:rw /dev/uinput
 ```
 
-</details>
+### Extension đã cài nhưng không active
 
----
-
-## 🛠️ For Developers
-
-Want to hack on the code?
-
-**Tech Stack:** `Rust` + `Tauri v2` + `React` + `Tailwind CSS` + `Linux`
-
-<div align="center">
-  <a href="https://skillicons.dev">
-    <img src="https://skillicons.dev/icons?i=rust,tauri,react,ts,tailwind,linux" />
-  </a>
-</div>
+Kiểm tra danh sách extension:
 
 ```bash
-# 1. Clone
-git clone https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux.git
-cd Windows-11-Clipboard-History-For-Linux
-
-# 2. Install Deps
-make deps && make rust && make node
-source ~/.cargo/env
-
-# 3. Run Dev Mode
-make dev
-
+gnome-extensions list | grep win11-clipboard
+gnome-extensions info win11-clipboard-history@gustavosett.dev
 ```
 
----
+Nếu cần cài lại:
 
-## ✨ Contributors
+```bash
+scripts/install-gnome-extension.sh
+gnome-extensions disable win11-clipboard-history@gustavosett.dev
+sleep 1
+gnome-extensions enable win11-clipboard-history@gustavosett.dev
+```
 
-Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
+Nếu vẫn không active, logout/login lại.
 
-<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
-<!-- prettier-ignore-start -->
-<!-- markdownlint-disable -->
-<table>
-  <tbody>
-    <tr>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/freshCoder21313"><img src="https://avatars.githubusercontent.com/u/151538542?v=4?s=100" width="100px;" alt="freshCoder21313"/><br /><sub><b>freshCoder21313</b></sub></a><br /><a href="#data-freshCoder21313" title="Data">🔣</a> <a href="https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/gustavosett/Windows-11-Clipboard-History-For-Linux/commits?author=freshCoder21313" title="Code">💻</a> <a href="#design-freshCoder21313" title="Design">🎨</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Tallin-Boston-Technology"><img src="https://avatars.githubusercontent.com/u/247321893?v=4?s=100" width="100px;" alt="Tallin-Boston-Technology"/><br /><sub><b>Tallin-Boston-Technology</b></sub></a><br /><a href="#ideas-Tallin-Boston-Technology" title="Ideas, Planning, & Feedback">🤔</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/rorar"><img src="https://avatars.githubusercontent.com/u/44790144?v=4?s=100" width="100px;" alt="rorar"/><br /><sub><b>rorar</b></sub></a><br /><a href="#ideas-rorar" title="Ideas, Planning, & Feedback">🤔</a> <a href="https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/gustavosett/Windows-11-Clipboard-History-For-Linux/issues?q=author%3Arorar" title="Bug reports">🐛</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/sosadsonar"><img src="https://avatars.githubusercontent.com/u/120033042?v=4?s=100" width="100px;" alt="sonarx"/><br /><sub><b>sonarx</b></sub></a><br /><a href="#ideas-sosadsonar" title="Ideas, Planning, & Feedback">🤔</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://oleksandrdev.com/"><img src="https://avatars.githubusercontent.com/u/47930925?v=4?s=100" width="100px;" alt="Oleksandr Romaniuk"/><br /><sub><b>Oleksandr Romaniuk</b></sub></a><br /><a href="https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/gustavosett/Windows-11-Clipboard-History-For-Linux/issues?q=author%3Aolksndrdevhub" title="Bug reports">🐛</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Predrag"><img src="https://avatars.githubusercontent.com/u/460694?v=4?s=100" width="100px;" alt="Predrag"/><br /><sub><b>Predrag</b></sub></a><br /><a href="https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/gustavosett/Windows-11-Clipboard-History-For-Linux/commits?author=Predrag" title="Code">💻</a> <a href="https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/gustavosett/Windows-11-Clipboard-History-For-Linux/issues?q=author%3APredrag" title="Bug reports">🐛</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/henmalib"><img src="https://avatars.githubusercontent.com/u/68553709?v=4?s=100" width="100px;" alt="Hen"/><br /><sub><b>Hen</b></sub></a><br /><a href="https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/gustavosett/Windows-11-Clipboard-History-For-Linux/issues?q=author%3Ahenmalib" title="Bug reports">🐛</a> <a href="https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/gustavosett/Windows-11-Clipboard-History-For-Linux/commits?author=henmalib" title="Code">💻</a></td>
-    </tr>
-    <tr>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/e6ad2020"><img src="https://avatars.githubusercontent.com/u/119390190?v=4?s=100" width="100px;" alt="Eyad"/><br /><sub><b>Eyad</b></sub></a><br /><a href="https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/gustavosett/Windows-11-Clipboard-History-For-Linux/issues?q=author%3Ae6ad2020" title="Bug reports">🐛</a> <a href="https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/gustavosett/Windows-11-Clipboard-History-For-Linux/commits?author=e6ad2020" title="Code">💻</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://alexandre-pommier.com"><img src="https://avatars.githubusercontent.com/u/69145792?v=4?s=100" width="100px;" alt="Kinou"/><br /><sub><b>Kinou</b></sub></a><br /><a href="https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/gustavosett/Windows-11-Clipboard-History-For-Linux/issues?q=author%3Akinou-p" title="Bug reports">🐛</a> <a href="https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/gustavosett/Windows-11-Clipboard-History-For-Linux/commits?author=kinou-p" title="Code">💻</a> <a href="#question-kinou-p" title="Answering Questions">💬</a> <a href="#design-kinou-p" title="Design">🎨</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/thomasbuilds"><img src="https://avatars.githubusercontent.com/u/143176954?v=4?s=100" width="100px;" alt="Thomas"/><br /><sub><b>Thomas</b></sub></a><br /><a href="https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/gustavosett/Windows-11-Clipboard-History-For-Linux/issues?q=author%3Athomasbuilds" title="Bug reports">🐛</a> <a href="https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/gustavosett/Windows-11-Clipboard-History-For-Linux/commits?author=thomasbuilds" title="Code">💻</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/axellpadilla"><img src="https://avatars.githubusercontent.com/u/68310020?v=4?s=100" width="100px;" alt="Axell Padilla"/><br /><sub><b>Axell Padilla</b></sub></a><br /><a href="https://github.com/gustavosett/Windows-11-Clipboard-History-For-Linux/gustavosett/Windows-11-Clipboard-History-For-Linux/commits?author=axellpadilla" title="Code">💻</a></td>
-    </tr>
-  </tbody>
-  <tfoot>
-    <tr>
-      <td align="center" size="13px" colspan="7">
-        <img src="https://raw.githubusercontent.com/all-contributors/all-contributors-cli/1b8533af435da9854653492b1327a23a4dbd0a10/assets/logo-small.svg">
-          <a href="https://all-contributors.js.org/docs/en/bot/usage">Add your contributions</a>
-        </img>
-      </td>
-    </tr>
-  </tfoot>
-</table>
+## 10. Gỡ Cài Đặt
 
-<!-- markdownlint-restore -->
-<!-- prettier-ignore-end -->
+Gỡ app `.deb`:
 
-<!-- ALL-CONTRIBUTORS-LIST:END -->
+```bash
+sudo apt remove win11-clipboard-history
+```
 
-<div align="center">
-<br />
+Gỡ GNOME extension:
 
-# Like this project?
+```bash
+gnome-extensions disable win11-clipboard-history@gustavosett.dev
+rm -rf ~/.local/share/gnome-shell/extensions/win11-clipboard-history@gustavosett.dev
+```
 
-<img alt="give it a star" src="https://github.com/user-attachments/assets/0e4e0804-095a-469c-aca5-e559202840f7" />
+Logout/login lại sau khi gỡ extension.
 
----
+## 11. Lệnh Thường Dùng Khi Phát Triển
 
-<img alt="Static Badge" src="https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square&link=https%3A%2F%2Fcloudsmith.com">
-</img>
+Build nhanh app release:
 
+```bash
+PATH="$HOME/.cargo/bin:$PATH" npm run tauri:build -- --bundles deb
+```
 
-Package repository hosting is graciously provided by [Cloudsmith](https://cloudsmith.com).
-Cloudsmith is the only fully hosted, cloud-native, universal package management solution, that
-enables your organization to create, store and share packages in any format, to any place, with total
-confidence.
-</div>
+Cài đè bản mới:
+
+```bash
+sudo dpkg -i ./src-tauri/target/release/bundle/deb/win11-clipboard-history_0.7.1_amd64.deb
+```
+
+Restart app nền:
+
+```bash
+pids=$(pgrep -f '^/usr/bin/win11-clipboard-history-bin' || true)
+if [ -n "$pids" ]; then
+  kill $pids
+  sleep 2
+fi
+nohup /usr/bin/win11-clipboard-history --background >/tmp/win11-clipboard-history.log 2>&1 &
+```
+
+Reload extension:
+
+```bash
+scripts/install-gnome-extension.sh
+gnome-extensions disable win11-clipboard-history@gustavosett.dev
+sleep 1
+gnome-extensions enable win11-clipboard-history@gustavosett.dev
+```

@@ -26,6 +26,37 @@ const DEFAULT_SETTINGS: UserSettings = {
   ui_scale: 1,
   auto_delete_interval: 0,
   auto_delete_unit: 'hours',
+  ctrl_shift_v_paste_targets: [
+    'alacritty',
+    'blackbox',
+    'com.mitchellh.ghostty',
+    'contour',
+    'deepin-terminal',
+    'foot',
+    'gnome-console',
+    'gnome-terminal',
+    'guake',
+    'io.elementary.terminal',
+    'kgx',
+    'kitty',
+    'konsole',
+    'lxterminal',
+    'mate-terminal',
+    'org.gnome.console',
+    'org.gnome.terminal',
+    'org.kde.konsole',
+    'qterminal',
+    'rio',
+    'sakura',
+    'st-256color',
+    'terminator',
+    'terminal',
+    'tilix',
+    'urxvt',
+    'wezterm',
+    'xfce4-terminal',
+    'xterm',
+  ],
 }
 
 type ThemeMode = 'system' | 'dark' | 'light'
@@ -414,6 +445,28 @@ function SettingsApp() {
     updateSettings({ [key]: !settings[key] } as Partial<UserSettings>)
   }
 
+  const normalizeCtrlShiftTargets = (value: string) =>
+    value
+      .split('\n')
+      .map((target) => target.trim())
+      .filter(Boolean)
+
+  const handleCtrlShiftTargetsChange = (value: string) => {
+    setSettings((prev) => ({
+      ...prev,
+      ctrl_shift_v_paste_targets: normalizeCtrlShiftTargets(value),
+    }))
+  }
+
+  const commitCtrlShiftTargetsChange = (value: string) => {
+    const newSettings = {
+      ...settings,
+      ctrl_shift_v_paste_targets: normalizeCtrlShiftTargets(value),
+    }
+    setSettings(newSettings)
+    saveSettings(newSettings)
+  }
+
   // Custom Kaomoji Handlers
   const addCustomKaomoji = useCallback(() => {
     const val = newKaomoji.trim()
@@ -440,6 +493,7 @@ function SettingsApp() {
   // Handle window close
   const handleClose = async () => {
     try {
+      await saveSettings(settings)
       await getCurrentWindow().hide()
     } catch (err) {
       console.error('Failed to close window:', err)
@@ -933,6 +987,70 @@ function SettingsApp() {
                     : 'bg-gray-50 border-gray-200 text-gray-900'
                 )}
               />
+            </div>
+          </div>
+        </section>
+
+        {/* Paste Shortcuts Section */}
+        <section
+          className={clsx(
+            'rounded-xl border shadow-sm overflow-hidden',
+            isDark ? 'bg-win11-bg-secondary border-white/5' : 'bg-white border-gray-200/60'
+          )}
+        >
+          <div className="p-6 border-b border-inherit">
+            <h2 className="text-base font-semibold mb-1">Paste Shortcuts</h2>
+            <p className={clsx('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
+              Match apps that expect Ctrl+Shift+V for paste
+            </p>
+          </div>
+
+          <div className="p-6 space-y-4">
+            <div className="flex items-start justify-between gap-6">
+              <div>
+                <label htmlFor="ctrl-shift-v-targets" className="text-sm font-medium">
+                  Ctrl+Shift+V Targets
+                </label>
+                <p className={clsx('text-xs mt-0.5', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                  Match against app id, WM_CLASS, or window title. One pattern per line.
+                </p>
+              </div>
+              <div
+                className={clsx(
+                  'px-2 py-1 rounded text-xs font-mono font-medium flex-shrink-0',
+                  isDark ? 'bg-black/20' : 'bg-gray-100'
+                )}
+              >
+                {settings.ctrl_shift_v_paste_targets.length}
+              </div>
+            </div>
+
+            <textarea
+              id="ctrl-shift-v-targets"
+              value={settings.ctrl_shift_v_paste_targets.join('\n')}
+              onChange={(e) => handleCtrlShiftTargetsChange(e.target.value)}
+              onBlur={(e) => commitCtrlShiftTargetsChange(e.target.value)}
+              spellCheck={false}
+              className={clsx(
+                'w-full min-h-44 px-3 py-2 rounded-md border text-sm font-mono leading-6 resize-y',
+                'focus:outline-none focus:ring-2 focus:ring-win11-bg-accent/50 transition-all custom-scrollbar',
+                isDark
+                  ? 'bg-white/5 border-white/10 text-white placeholder-gray-500'
+                  : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400'
+              )}
+            />
+
+            <div
+              className={clsx(
+                'rounded-lg border px-3 py-2 text-[11px] leading-relaxed',
+                isDark
+                  ? 'border-white/10 bg-black/15 text-gray-400'
+                  : 'border-gray-200 bg-gray-50 text-gray-500'
+              )}
+            >
+              Examples: <span className="font-mono">terminal</span>,{' '}
+              <span className="font-mono">kitty</span>,{' '}
+              <span className="font-mono">org.gnome.Console</span>
             </div>
           </div>
         </section>

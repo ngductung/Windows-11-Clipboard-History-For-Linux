@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { clsx } from 'clsx'
-import { getCurrentWindow } from '@tauri-apps/api/window'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
@@ -28,6 +27,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   auto_delete_unit: 'hours',
   custom_kaomojis: [],
   ui_scale: 1,
+  ctrl_shift_v_paste_targets: [],
 }
 
 /**
@@ -92,7 +92,6 @@ function ClipboardApp() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('clipboard')
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS)
   const [settingsLoaded, setSettingsLoaded] = useState(false)
-
   const renderingEnv = useRenderingEnv()
   const isDark = useThemeMode(settings.theme_mode)
 
@@ -180,7 +179,7 @@ function ClipboardApp() {
       if (e.key === 'Escape') {
         e.preventDefault()
         try {
-          await getCurrentWindow().hide()
+          await invoke('hide_main_window')
         } catch (err) {
           console.error('Failed to hide window:', err)
         }

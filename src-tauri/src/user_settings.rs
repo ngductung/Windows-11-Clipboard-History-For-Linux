@@ -53,6 +53,11 @@ pub struct UserSettings {
     /// UI scale factor for the clipboard window (0.5 to 2.0, default 1.0)
     #[serde(default = "default_ui_scale")]
     pub ui_scale: f32,
+
+    /// App id, WM_CLASS or title fragments that should receive Ctrl+Shift+V
+    /// instead of Ctrl+V when pasting.
+    #[serde(default = "default_ctrl_shift_v_paste_targets")]
+    pub ctrl_shift_v_paste_targets: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -83,6 +88,43 @@ fn default_unit() -> String {
     "hours".to_string()
 }
 
+pub fn default_ctrl_shift_v_paste_targets() -> Vec<String> {
+    [
+        "alacritty",
+        "blackbox",
+        "com.mitchellh.ghostty",
+        "contour",
+        "deepin-terminal",
+        "foot",
+        "gnome-console",
+        "gnome-terminal",
+        "guake",
+        "io.elementary.terminal",
+        "kgx",
+        "kitty",
+        "konsole",
+        "lxterminal",
+        "mate-terminal",
+        "org.gnome.console",
+        "org.gnome.terminal",
+        "org.kde.konsole",
+        "qterminal",
+        "rio",
+        "sakura",
+        "st-256color",
+        "terminator",
+        "terminal",
+        "tilix",
+        "urxvt",
+        "wezterm",
+        "xfce4-terminal",
+        "xterm",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
+
 impl Default for UserSettings {
     fn default() -> Self {
         Self {
@@ -97,6 +139,7 @@ impl Default for UserSettings {
             auto_delete_unit: "hours".to_string(),
             custom_kaomojis: Vec::new(),
             ui_scale: default_ui_scale(),
+            ctrl_shift_v_paste_targets: default_ctrl_shift_v_paste_targets(),
         }
     }
 }
@@ -138,6 +181,19 @@ impl UserSettings {
         if !["minutes", "hours", "days", "weeks"].contains(&self.auto_delete_unit.as_str()) {
             self.auto_delete_unit = "hours".to_string();
         }
+
+        self.ctrl_shift_v_paste_targets = self
+            .ctrl_shift_v_paste_targets
+            .iter()
+            .filter_map(|target| {
+                let trimmed = target.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            })
+            .collect();
     }
 }
 

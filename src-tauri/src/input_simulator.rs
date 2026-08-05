@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-type PasteStrategy = (&'static str, fn() -> Result<(), PasteFailure>);
+type PasteStrategy = (&'static str, fn(PasteChord) -> Result<(), PasteFailure>);
 
 enum PasteFailure {
     /// No paste key was attempted, so another backend may safely run.
@@ -36,6 +36,7 @@ const EV_SYN: u16 = 0x00;
 const EV_KEY: u16 = 0x01;
 const SYN_REPORT: u16 = 0x00;
 const KEY_LEFTCTRL: u16 = 29;
+const KEY_LEFTSHIFT: u16 = 42;
 const KEY_V: u16 = 47;
 
 const UI_SET_EVBIT: libc::c_ulong = 0x40045564;
@@ -48,8 +49,25 @@ const X11_KEY_PRESS: u8 = 2;
 const X11_KEY_RELEASE: u8 = 3;
 const XK_CONTROL_L: u32 = 0xffe3;
 const XK_CONTROL_R: u32 = 0xffe4;
+const XK_SHIFT_L: u32 = 0xffe1;
+const XK_SHIFT_R: u32 = 0xffe2;
 const XK_LOWER_V: u32 = 0x0076;
 const XK_UPPER_V: u32 = 0x0056;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PasteChord {
+    CtrlV,
+    CtrlShiftV,
+}
+
+impl PasteChord {
+    fn label(self) -> &'static str {
+        match self {
+            Self::CtrlV => "Ctrl+V",
+            Self::CtrlShiftV => "Ctrl+Shift+V",
+        }
+    }
+}
 
 /// Persistent virtual keyboard. Recreating it for every paste allowed the
 /// compositor to attach after Ctrl but before V, which produced a literal
@@ -64,6 +82,7 @@ struct XtestDevice {
     connection: x11rb::rust_connection::RustConnection,
     root_window: u32,
     ctrl_keycode: u8,
+    shift_keycode: u8,
     v_keycode: u8,
 }
 
@@ -134,7 +153,14 @@ fn warm_up_uinput() {
 }
 
 pub fn simulate_paste_keystroke() -> Result<(), String> {
-    eprintln!("[SimulatePaste] Sending Ctrl+V...");
+    let settings = crate::user_settings::UserSettingsManager::new().load();
+    let chord =
+        if crate::focus_manager::target_matches_any_pattern(&settings.ctrl_shift_v_paste_targets) {
+            PasteChord::CtrlShiftV
+        } else {
+            PasteChord::CtrlV
+        };
+    eprintln!("[SimulatePaste] Sending {}...", chord.label());
 
     // XTest uses one native X11 connection and verifies that Ctrl is down
     // before V. xdotool is retained only as a compatibility fallback.
@@ -152,9 +178,9 @@ pub fn simulate_paste_keystroke() -> Result<(), String> {
     };
 
     for (name, strategy) in strategies {
-        match strategy() {
+        match strategy(chord) {
             Ok(()) => {
-                eprintln!("[SimulatePaste] Ctrl+V sent via {}", name);
+                eprintln!("[SimulatePaste] {} sent via {}", chord.label(), name);
                 return Ok(());
             }
             Err(PasteFailure::Retryable(error)) => {
@@ -189,7 +215,7 @@ fn fake_key<C: x11rb::connection::Connection + x11rb::protocol::xtest::Connectio
         .map_err(|error| format!("X11 flush failed: {}", error))
 }
 
-fn simulate_paste_xtest() -> Result<(), PasteFailure> {
+fn simulate_paste_xtest(chord: PasteChord) -> Result<(), PasteFailure> {
     let mut device = xtest_device_lock().lock();
     if device.is_none() {
         *device = Some(XtestDevice::create().map_err(PasteFailure::Retryable)?);
@@ -199,7 +225,7 @@ fn simulate_paste_xtest() -> Result<(), PasteFailure> {
     let result = current
         .refresh_keymap_if_needed()
         .map_err(PasteFailure::Retryable)
-        .and_then(|()| current.send_ctrl_v());
+        .and_then(|()| current.send_paste_chord(chord));
     if result.is_err() {
         // Reconnect on the next attempt if the X server connection went away.
         *device = None;
@@ -231,12 +257,13 @@ impl XtestDevice {
             .reply()
             .map_err(|error| format!("XTest version query failed: {}", error))?;
 
-        let (ctrl_keycode, v_keycode) = resolve_paste_keycodes(&connection)?;
+        let (ctrl_keycode, shift_keycode, v_keycode) = resolve_paste_keycodes(&connection)?;
 
         Ok(Self {
             connection,
             root_window,
             ctrl_keycode,
+            shift_keycode,
             v_keycode,
         })
     }
@@ -257,28 +284,41 @@ impl XtestDevice {
         }
 
         if mapping_changed {
-            (self.ctrl_keycode, self.v_keycode) = resolve_paste_keycodes(&self.connection)?;
+            (self.ctrl_keycode, self.shift_keycode, self.v_keycode) =
+                resolve_paste_keycodes(&self.connection)?;
             eprintln!("[XTest] Keyboard mapping changed; refreshed paste keycodes");
         }
 
         Ok(())
     }
 
-    fn send_ctrl_v(&mut self) -> Result<(), PasteFailure> {
+    fn send_paste_chord(&mut self, chord: PasteChord) -> Result<(), PasteFailure> {
         let mut guard = XtestKeyGuard::new(&self.connection, self.root_window);
 
         let operation = (|| {
             guard.press(self.ctrl_keycode, false, "Failed to press Ctrl")?;
             wait_for_x11_key_state(&self.connection, self.ctrl_keycode, true)?;
 
+            if chord == PasteChord::CtrlShiftV {
+                guard.press(self.shift_keycode, false, "Failed to press Shift")?;
+                wait_for_x11_key_state(&self.connection, self.shift_keycode, true)?;
+            }
+
             guard.press(self.v_keycode, true, "Failed to press V")?;
             wait_for_x11_key_state(&self.connection, self.v_keycode, true)?;
 
             guard.release(self.v_keycode, "Failed to release V")?;
 
+            if chord == PasteChord::CtrlShiftV {
+                guard.release(self.shift_keycode, "Failed to release Shift")?;
+            }
+
             guard.release(self.ctrl_keycode, "Failed to release Ctrl")?;
 
             wait_for_x11_key_state(&self.connection, self.v_keycode, false)?;
+            if chord == PasteChord::CtrlShiftV {
+                wait_for_x11_key_state(&self.connection, self.shift_keycode, false)?;
+            }
             wait_for_x11_key_state(&self.connection, self.ctrl_keycode, false)
         })();
 
@@ -304,7 +344,7 @@ impl<'a> XtestKeyGuard<'a> {
         Self {
             connection,
             root_window,
-            held: Vec::with_capacity(2),
+            held: Vec::with_capacity(3),
             paste_may_have_been_sent: false,
         }
     }
@@ -361,7 +401,9 @@ impl Drop for XtestKeyGuard<'_> {
     }
 }
 
-fn resolve_paste_keycodes<C: x11rb::connection::Connection>(conn: &C) -> Result<(u8, u8), String> {
+fn resolve_paste_keycodes<C: x11rb::connection::Connection>(
+    conn: &C,
+) -> Result<(u8, u8, u8), String> {
     use x11rb::protocol::xproto::ConnectionExt as XprotoConnectionExt;
 
     let setup = conn.setup();
@@ -385,6 +427,13 @@ fn resolve_paste_keycodes<C: x11rb::connection::Connection>(conn: &C) -> Result<
         &[XK_CONTROL_L, XK_CONTROL_R],
     )
     .ok_or("Ctrl key not found in the active X11 keymap")?;
+    let shift = find_keycode(
+        &mapping.keysyms,
+        mapping.keysyms_per_keycode,
+        first_keycode,
+        &[XK_SHIFT_L, XK_SHIFT_R],
+    )
+    .ok_or("Shift key not found in the active X11 keymap")?;
     let v = find_keycode(
         &mapping.keysyms,
         mapping.keysyms_per_keycode,
@@ -393,7 +442,7 @@ fn resolve_paste_keycodes<C: x11rb::connection::Connection>(conn: &C) -> Result<
     )
     .ok_or("V key not found in the active X11 keymap")?;
 
-    Ok((ctrl, v))
+    Ok((ctrl, shift, v))
 }
 
 fn find_keycode(
@@ -453,14 +502,19 @@ fn key_is_pressed(keymap: &[u8; 32], keycode: u8) -> bool {
     keymap[byte] & (1 << bit) != 0
 }
 
-fn simulate_paste_xdotool() -> Result<(), PasteFailure> {
+fn simulate_paste_xdotool(chord: PasteChord) -> Result<(), PasteFailure> {
+    let key = match chord {
+        PasteChord::CtrlV => "ctrl+v",
+        PasteChord::CtrlShiftV => "ctrl+shift+v",
+    };
+
     let output = std::process::Command::new("xdotool")
         .args([
             "key",
             "--delay",
             XDOTOOL_KEY_DELAY_MS,
             "--clearmodifiers",
-            "ctrl+v",
+            key,
         ])
         .output()
         .map_err(|error| PasteFailure::Retryable(format!("Failed to start xdotool: {}", error)))?;
@@ -499,6 +553,9 @@ impl UinputDevice {
             }
             if libc::ioctl(fd, UI_SET_KEYBIT, KEY_LEFTCTRL as libc::c_int) < 0 {
                 return Err(last_os_error("Failed to enable KEY_LEFTCTRL"));
+            }
+            if libc::ioctl(fd, UI_SET_KEYBIT, KEY_LEFTSHIFT as libc::c_int) < 0 {
+                return Err(last_os_error("Failed to enable KEY_LEFTSHIFT"));
             }
             if libc::ioctl(fd, UI_SET_KEYBIT, KEY_V as libc::c_int) < 0 {
                 return Err(last_os_error("Failed to enable KEY_V"));
@@ -549,8 +606,8 @@ impl UinputDevice {
         Ok(Self { file })
     }
 
-    fn send_ctrl_v(&mut self) -> Result<(), String> {
-        let sequence = ctrl_v_sequence();
+    fn send_paste_chord(&mut self, chord: PasteChord) -> Result<(), String> {
+        let sequence = paste_sequence(chord);
         if let Err(error) = self.write_events(&sequence) {
             let _ = self.release_all_keys();
             return Err(error);
@@ -561,6 +618,7 @@ impl UinputDevice {
     fn release_all_keys(&mut self) -> Result<(), String> {
         self.write_events(&[
             input_event(EV_KEY, KEY_V, 0),
+            input_event(EV_KEY, KEY_LEFTSHIFT, 0),
             input_event(EV_KEY, KEY_LEFTCTRL, 0),
             input_event(EV_SYN, SYN_REPORT, 0),
         ])
@@ -582,11 +640,11 @@ impl Drop for UinputDevice {
     }
 }
 
-fn simulate_paste_uinput() -> Result<(), PasteFailure> {
+fn simulate_paste_uinput(chord: PasteChord) -> Result<(), PasteFailure> {
     let mut device = uinput_device_lock().lock();
 
     if let Some(existing) = device.as_mut() {
-        match existing.send_ctrl_v() {
+        match existing.send_paste_chord(chord) {
             Ok(()) => return Ok(()),
             Err(error) => {
                 eprintln!("[uinput] Existing device failed: {}", error);
@@ -597,22 +655,38 @@ fn simulate_paste_uinput() -> Result<(), PasteFailure> {
     }
 
     let mut created = UinputDevice::create().map_err(PasteFailure::Retryable)?;
-    created.send_ctrl_v().map_err(PasteFailure::Ambiguous)?;
+    created
+        .send_paste_chord(chord)
+        .map_err(PasteFailure::Ambiguous)?;
     *device = Some(created);
     Ok(())
 }
 
-fn ctrl_v_sequence() -> [libc::input_event; 6] {
-    [
+fn paste_sequence(chord: PasteChord) -> Vec<libc::input_event> {
+    let mut events = Vec::with_capacity(if chord == PasteChord::CtrlShiftV {
+        8
+    } else {
+        6
+    });
+    events.push(input_event(EV_KEY, KEY_LEFTCTRL, 1));
+    if chord == PasteChord::CtrlShiftV {
+        events.push(input_event(EV_KEY, KEY_LEFTSHIFT, 1));
+    }
+    events.extend([
         // One frame makes Ctrl and V visible together; the second releases
         // both. There is no scheduling window between separate key writes.
-        input_event(EV_KEY, KEY_LEFTCTRL, 1),
         input_event(EV_KEY, KEY_V, 1),
         input_event(EV_SYN, SYN_REPORT, 0),
         input_event(EV_KEY, KEY_V, 0),
+    ]);
+    if chord == PasteChord::CtrlShiftV {
+        events.push(input_event(EV_KEY, KEY_LEFTSHIFT, 0));
+    }
+    events.extend([
         input_event(EV_KEY, KEY_LEFTCTRL, 0),
         input_event(EV_SYN, SYN_REPORT, 0),
-    ]
+    ]);
+    events
 }
 
 fn input_event(type_: u16, code: u16, value: i32) -> libc::input_event {
@@ -694,7 +768,7 @@ mod tests {
 
     #[test]
     fn ctrl_v_is_emitted_as_two_complete_frames() {
-        let events = ctrl_v_sequence();
+        let events = paste_sequence(PasteChord::CtrlV);
         let actual: Vec<(u16, u16, i32)> = events
             .iter()
             .map(|event| (event.type_, event.code, event.value))
@@ -714,8 +788,31 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_shift_v_includes_shift_until_v_is_released() {
+        let events = paste_sequence(PasteChord::CtrlShiftV);
+        let actual: Vec<(u16, u16, i32)> = events
+            .iter()
+            .map(|event| (event.type_, event.code, event.value))
+            .collect();
+
+        assert_eq!(
+            actual,
+            vec![
+                (EV_KEY, KEY_LEFTCTRL, 1),
+                (EV_KEY, KEY_LEFTSHIFT, 1),
+                (EV_KEY, KEY_V, 1),
+                (EV_SYN, SYN_REPORT, 0),
+                (EV_KEY, KEY_V, 0),
+                (EV_KEY, KEY_LEFTSHIFT, 0),
+                (EV_KEY, KEY_LEFTCTRL, 0),
+                (EV_SYN, SYN_REPORT, 0),
+            ]
+        );
+    }
+
+    #[test]
     fn input_event_bytes_use_the_platform_abi_size() {
-        let events = ctrl_v_sequence();
+        let events = paste_sequence(PasteChord::CtrlV);
         assert_eq!(
             input_events_as_bytes(&events).len(),
             events.len() * std::mem::size_of::<libc::input_event>()
@@ -737,15 +834,19 @@ mod tests {
     #[test]
     fn keycodes_are_resolved_from_the_active_mapping() {
         // Three keycodes starting at 20, with two symbols each.
-        let mapping = [0, 0, XK_CONTROL_L, 0, XK_LOWER_V, XK_UPPER_V];
+        let mapping = [0, 0, XK_CONTROL_L, 0, XK_SHIFT_L, 0, XK_LOWER_V, XK_UPPER_V];
 
         assert_eq!(
             find_keycode(&mapping, 2, 20, &[XK_CONTROL_L, XK_CONTROL_R]),
             Some(21)
         );
         assert_eq!(
-            find_keycode(&mapping, 2, 20, &[XK_LOWER_V, XK_UPPER_V]),
+            find_keycode(&mapping, 2, 20, &[XK_SHIFT_L, XK_SHIFT_R]),
             Some(22)
+        );
+        assert_eq!(
+            find_keycode(&mapping, 2, 20, &[XK_LOWER_V, XK_UPPER_V]),
+            Some(23)
         );
     }
 }

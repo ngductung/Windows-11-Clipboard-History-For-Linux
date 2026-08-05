@@ -1,0 +1,7 @@
+{
+  "uuid": "win11-clipboard-history@gustavosett.dev",
+  "name": "Windows 11 Clipboard History Pointer Launcher",
+  "description": "Opens Windows 11 Clipboard History at the current pointer position on GNOME Wayland.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "settings-schema": "org.gnome.shell.extensions.win11-clipboard-history"
+}
