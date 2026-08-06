@@ -14,7 +14,7 @@ Với Ubuntu/Debian/Mint/Pop!_OS, người dùng cuối nên cài bằng file `.
 2. Tải file `.deb` mới nhất, ví dụ:
 
 ```text
-win11-clipboard-history_0.7.1_amd64.deb
+win11-clipboard-history_1.0.2_amd64.deb
 ```
 
 3. Cài file vừa tải:
@@ -218,13 +218,13 @@ src-tauri/target/release/bundle/deb/
 Cài lần đầu:
 
 ```bash
-sudo apt install ./src-tauri/target/release/bundle/deb/win11-clipboard-history_0.7.1_amd64.deb
+sudo apt install ./src-tauri/target/release/bundle/deb/win11-clipboard-history_1.0.2_amd64.deb
 ```
 
 Cài đè cùng version khi đang phát triển:
 
 ```bash
-sudo dpkg -i ./src-tauri/target/release/bundle/deb/win11-clipboard-history_0.7.1_amd64.deb
+sudo dpkg -i ./src-tauri/target/release/bundle/deb/win11-clipboard-history_1.0.2_amd64.deb
 sudo apt -f install
 ```
 

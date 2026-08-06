@@ -22,6 +22,8 @@ enum PasteFailure {
 const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(2);
 const DEVICE_READY_POLL_INTERVAL: Duration = Duration::from_millis(5);
 const DEVICE_DISCOVERY_GRACE: Duration = Duration::from_millis(100);
+const UINPUT_MODIFIER_SETTLE: Duration = Duration::from_millis(12);
+const UINPUT_KEY_HOLD: Duration = Duration::from_millis(18);
 
 /// X11 key-state checks are round trips to the X server. They normally finish
 /// immediately; the timeout is only a failure ceiling for a stalled server.
@@ -607,12 +609,31 @@ impl UinputDevice {
     }
 
     fn send_paste_chord(&mut self, chord: PasteChord) -> Result<(), String> {
-        let sequence = paste_sequence(chord);
-        if let Err(error) = self.write_events(&sequence) {
+        if let Err(error) = self.write_paste_chord(chord) {
             let _ = self.release_all_keys();
             return Err(error);
         }
         Ok(())
+    }
+
+    fn write_paste_chord(&mut self, chord: PasteChord) -> Result<(), String> {
+        self.write_events(&[input_event(EV_KEY, KEY_LEFTCTRL, 1), sync_event()])?;
+
+        if chord == PasteChord::CtrlShiftV {
+            self.write_events(&[input_event(EV_KEY, KEY_LEFTSHIFT, 1), sync_event()])?;
+        }
+
+        std::thread::sleep(UINPUT_MODIFIER_SETTLE);
+
+        self.write_events(&[input_event(EV_KEY, KEY_V, 1), sync_event()])?;
+        std::thread::sleep(UINPUT_KEY_HOLD);
+        self.write_events(&[input_event(EV_KEY, KEY_V, 0), sync_event()])?;
+
+        if chord == PasteChord::CtrlShiftV {
+            self.write_events(&[input_event(EV_KEY, KEY_LEFTSHIFT, 0), sync_event()])?;
+        }
+
+        self.write_events(&[input_event(EV_KEY, KEY_LEFTCTRL, 0), sync_event()])
     }
 
     fn release_all_keys(&mut self) -> Result<(), String> {
@@ -662,33 +683,6 @@ fn simulate_paste_uinput(chord: PasteChord) -> Result<(), PasteFailure> {
     Ok(())
 }
 
-fn paste_sequence(chord: PasteChord) -> Vec<libc::input_event> {
-    let mut events = Vec::with_capacity(if chord == PasteChord::CtrlShiftV {
-        8
-    } else {
-        6
-    });
-    events.push(input_event(EV_KEY, KEY_LEFTCTRL, 1));
-    if chord == PasteChord::CtrlShiftV {
-        events.push(input_event(EV_KEY, KEY_LEFTSHIFT, 1));
-    }
-    events.extend([
-        // One frame makes Ctrl and V visible together; the second releases
-        // both. There is no scheduling window between separate key writes.
-        input_event(EV_KEY, KEY_V, 1),
-        input_event(EV_SYN, SYN_REPORT, 0),
-        input_event(EV_KEY, KEY_V, 0),
-    ]);
-    if chord == PasteChord::CtrlShiftV {
-        events.push(input_event(EV_KEY, KEY_LEFTSHIFT, 0));
-    }
-    events.extend([
-        input_event(EV_KEY, KEY_LEFTCTRL, 0),
-        input_event(EV_SYN, SYN_REPORT, 0),
-    ]);
-    events
-}
-
 fn input_event(type_: u16, code: u16, value: i32) -> libc::input_event {
     // input_event has target-specific time fields. Zeroing the libc type uses
     // the correct ABI on both 32- and 64-bit Linux, unlike a hardcoded 24-byte
@@ -698,6 +692,10 @@ fn input_event(type_: u16, code: u16, value: i32) -> libc::input_event {
     event.code = code;
     event.value = value;
     event
+}
+
+fn sync_event() -> libc::input_event {
+    input_event(EV_SYN, SYN_REPORT, 0)
 }
 
 fn input_events_as_bytes(events: &[libc::input_event]) -> &[u8] {

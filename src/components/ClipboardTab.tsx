@@ -258,6 +258,13 @@ export function ClipboardTab(props: {
     }
   }, [showSections, pinnedExpanded, focusedIndex, pinnedItems.length])
 
+  const activateFocusedItem = useCallback(() => {
+    const item = visibleItems[focusedIndex]
+    if (item) {
+      onPaste(item.id)
+    }
+  }, [focusedIndex, onPaste, visibleItems])
+
   // Keyboard navigation
   useHistoryKeyboardNavigation({
     activeTab: 'clipboard',
@@ -269,6 +276,7 @@ export function ClipboardTab(props: {
     searchInputRef,
     onUpFromFirstItem,
     onLeftArrow,
+    onActivateItem: activateFocusedItem,
   })
 
   // Reset focused index when filtered results change

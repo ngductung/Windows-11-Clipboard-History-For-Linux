@@ -75,13 +75,13 @@ ls -lh src-tauri/target/release/bundle/deb/*.deb
 Cài lần đầu bằng `apt`:
 
 ```bash
-sudo apt install ./src-tauri/target/release/bundle/deb/win11-clipboard-history_0.7.1_amd64.deb
+sudo apt install ./src-tauri/target/release/bundle/deb/win11-clipboard-history_1.0.2_amd64.deb
 ```
 
 Nếu đang cài đè cùng version, `apt` có thể báo package đã là newest version. Khi đó dùng `dpkg -i` để ép ghi đè binary mới:
 
 ```bash
-sudo dpkg -i ./src-tauri/target/release/bundle/deb/win11-clipboard-history_0.7.1_amd64.deb
+sudo dpkg -i ./src-tauri/target/release/bundle/deb/win11-clipboard-history_1.0.2_amd64.deb
 sudo apt -f install
 ```
 
@@ -343,7 +343,7 @@ PATH="$HOME/.cargo/bin:$PATH" npm run tauri:build -- --bundles deb
 Cài đè bản mới:
 
 ```bash
-sudo dpkg -i ./src-tauri/target/release/bundle/deb/win11-clipboard-history_0.7.1_amd64.deb
+sudo dpkg -i ./src-tauri/target/release/bundle/deb/win11-clipboard-history_1.0.2_amd64.deb
 ```
 
 Restart app nền:

@@ -13,6 +13,7 @@ export function useHistoryKeyboardNavigation(params: {
   searchInputRef: RefObject<HTMLInputElement | null>
   onUpFromFirstItem?: () => boolean
   onLeftArrow?: () => void
+  onActivateItem?: () => void
 }) {
   const {
     activeTab,
@@ -24,12 +25,15 @@ export function useHistoryKeyboardNavigation(params: {
     searchInputRef,
     onUpFromFirstItem,
     onLeftArrow,
+    onActivateItem,
   } = params
 
   useEffect(() => {
     if (activeTab !== 'clipboard' || itemsLength === 0) return
 
     const handleArrowKeys = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return
+
       const activeElement = document.activeElement
       if (activeElement?.getAttribute('role') === 'tab') return
 
@@ -75,6 +79,9 @@ export function useHistoryKeyboardNavigation(params: {
         setFocusedIndex(lastIndex)
         historyItemRefs.current[lastIndex]?.focus()
         historyItemRefs.current[lastIndex]?.scrollIntoView({ block: 'nearest' })
+      } else if ((e.key === 'Enter' || e.key === ' ') && !isOnSearchInput) {
+        e.preventDefault()
+        onActivateItem?.()
       } else if (e.key === 'Tab' && !e.shiftKey) {
         e.preventDefault()
         tabBarRef.current?.focusFirstTab()
@@ -93,5 +100,6 @@ export function useHistoryKeyboardNavigation(params: {
     searchInputRef,
     onUpFromFirstItem,
     onLeftArrow,
+    onActivateItem,
   ])
 }

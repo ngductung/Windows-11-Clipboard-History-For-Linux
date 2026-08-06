@@ -364,6 +364,7 @@ impl PasteHelper {
     const TARGET_READY_TIMEOUT: Duration = Duration::from_millis(750);
     const TARGET_READY_POLL_INTERVAL: Duration = Duration::from_millis(2);
     const TARGET_STABLE_SAMPLES: u8 = 2;
+    const WAYLAND_FOCUS_SETTLE: Duration = Duration::from_millis(0);
 
     /// Restores focus to the previous window and waits for it to settle.
     /// This ensures keystrokes are sent to the correct application.
@@ -375,6 +376,7 @@ impl PasteHelper {
         Self::wait_for_popup_to_release_focus(app).await?;
 
         if is_wayland() {
+            tokio::time::sleep(Self::WAYLAND_FOCUS_SETTLE).await;
             return Ok(());
         }
 
