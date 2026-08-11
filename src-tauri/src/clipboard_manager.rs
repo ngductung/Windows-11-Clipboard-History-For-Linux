@@ -642,6 +642,18 @@ impl ClipboardManager {
     }
 
     pub fn paste_item(&mut self, item: &ClipboardItem) -> Result<(), String> {
+        self.prepare_item_for_paste(item)?;
+
+        // 3. Simulate User Input
+        self.simulate_paste_action()?;
+
+        // 4. Move item to top of history so it's easily accessible for repeated use
+        self.move_item_to_top(&item.id);
+
+        Ok(())
+    }
+
+    pub fn prepare_item_for_paste(&mut self, item: &ClipboardItem) -> Result<(), String> {
         // 1. Prevent loop: Mark as pasted before OS action
         self.mark_as_pasted(item);
 
@@ -662,12 +674,6 @@ impl ClipboardManager {
                 self.set_image_robust(base64, *width, *height)?;
             }
         }
-
-        // 3. Simulate User Input
-        self.simulate_paste_action()?;
-
-        // 4. Move item to top of history so it's easily accessible for repeated use
-        self.move_item_to_top(&item.id);
 
         Ok(())
     }

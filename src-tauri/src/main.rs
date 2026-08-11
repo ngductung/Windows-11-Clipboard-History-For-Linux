@@ -215,17 +215,25 @@ async fn paste_item(app: AppHandle, state: State<'_, AppState>, id: String) -> R
 
     match item {
         Some(item) => {
-            // 2. Prepare Environment (Hide Window -> Restore Focus)
+            // 2. Prepare clipboard while the popup still owns focus. Some
+            // apps drop the selected range if we update the clipboard after
+            // focus returns, which breaks replacing selected text with the
+            // current first history item.
+            let history = {
+                let mut manager = state.clipboard_manager.lock();
+                manager
+                    .prepare_item_for_paste(&item)
+                    .map_err(|e| e.to_string())?;
+                manager.move_item_to_top(&item.id);
+                manager.get_history()
+            };
+
+            // 3. Hide Window -> Restore Focus -> Emit Paste Chord
             WindowController::hide(&app);
             PasteHelper::prepare_target_window(&app).await?;
-
-            // 3. Perform Paste
-            let mut manager = state.clipboard_manager.lock();
-            manager.paste_item(&item).map_err(|e| e.to_string())?;
+            simulate_paste_keystroke().map_err(|e| e.to_string())?;
 
             // 4. Notify frontend of history change (item moved to top)
-            let history = manager.get_history();
-            drop(manager); // Release lock before emitting
             let _ = app.emit("history-sync", &history);
         }
         None => {

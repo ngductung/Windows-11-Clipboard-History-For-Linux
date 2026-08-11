@@ -58,3 +58,5 @@ temp/
 *.crt
 *.p12
 *.pfx
+
+.codegraph/
