@@ -765,7 +765,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ctrl_v_is_emitted_as_two_complete_frames() {
+    fn ctrl_v_is_emitted_with_sync_after_each_step() {
         let events = paste_sequence(PasteChord::CtrlV);
         let actual: Vec<(u16, u16, i32)> = events
             .iter()
@@ -776,9 +776,11 @@ mod tests {
             actual,
             vec![
                 (EV_KEY, KEY_LEFTCTRL, 1),
+                (EV_SYN, SYN_REPORT, 0),
                 (EV_KEY, KEY_V, 1),
                 (EV_SYN, SYN_REPORT, 0),
                 (EV_KEY, KEY_V, 0),
+                (EV_SYN, SYN_REPORT, 0),
                 (EV_KEY, KEY_LEFTCTRL, 0),
                 (EV_SYN, SYN_REPORT, 0),
             ]
@@ -797,11 +799,15 @@ mod tests {
             actual,
             vec![
                 (EV_KEY, KEY_LEFTCTRL, 1),
+                (EV_SYN, SYN_REPORT, 0),
                 (EV_KEY, KEY_LEFTSHIFT, 1),
+                (EV_SYN, SYN_REPORT, 0),
                 (EV_KEY, KEY_V, 1),
                 (EV_SYN, SYN_REPORT, 0),
                 (EV_KEY, KEY_V, 0),
+                (EV_SYN, SYN_REPORT, 0),
                 (EV_KEY, KEY_LEFTSHIFT, 0),
+                (EV_SYN, SYN_REPORT, 0),
                 (EV_KEY, KEY_LEFTCTRL, 0),
                 (EV_SYN, SYN_REPORT, 0),
             ]
@@ -815,6 +821,28 @@ mod tests {
             input_events_as_bytes(&events).len(),
             events.len() * std::mem::size_of::<libc::input_event>()
         );
+    }
+
+    fn paste_sequence(chord: PasteChord) -> Vec<libc::input_event> {
+        let mut events = vec![input_event(EV_KEY, KEY_LEFTCTRL, 1), sync_event()];
+
+        if chord == PasteChord::CtrlShiftV {
+            events.extend([input_event(EV_KEY, KEY_LEFTSHIFT, 1), sync_event()]);
+        }
+
+        events.extend([
+            input_event(EV_KEY, KEY_V, 1),
+            sync_event(),
+            input_event(EV_KEY, KEY_V, 0),
+            sync_event(),
+        ]);
+
+        if chord == PasteChord::CtrlShiftV {
+            events.extend([input_event(EV_KEY, KEY_LEFTSHIFT, 0), sync_event()]);
+        }
+
+        events.extend([input_event(EV_KEY, KEY_LEFTCTRL, 0), sync_event()]);
+        events
     }
 
     #[test]

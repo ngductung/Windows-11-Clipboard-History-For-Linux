@@ -170,7 +170,7 @@ pub struct ClipboardManager {
     last_pasted_image_hash: Option<u64>,
     /// Track last added text hash to prevent duplicates from rapid copies
     last_added_text_hash: Option<u64>,
-    /// Path to save the history file
+    /// Path to save pinned clipboard items.
     persistence_path: PathBuf,
     /// Maximum number of history items to keep
     max_history_size: usize,
@@ -234,25 +234,17 @@ impl ClipboardManager {
             Ok(content) => {
                 match serde_json::from_str::<Vec<ClipboardItem>>(&content) {
                     Ok(items) => {
-                        // Reorder items so pinned come first while preserving order within each group
-                        let mut pinned_items = Vec::new();
-                        let mut unpinned_items = Vec::new();
-
-                        for item in items {
-                            if item.pinned {
-                                pinned_items.push(item);
-                            } else {
-                                unpinned_items.push(item);
-                            }
-                        }
-
-                        pinned_items.extend(unpinned_items);
+                        let original_count = items.len();
+                        let pinned_count = items.iter().filter(|item| item.pinned).count();
+                        let pinned_items = items
+                            .into_iter()
+                            .filter(|item| item.pinned)
+                            .collect::<Vec<_>>();
                         self.history = pinned_items;
                         // Ensure loaded history respects configured limit immediately
                         let history_trimmed = self.enforce_history_limit();
-                        // If the loaded history was trimmed, persist it so disk stays in sync.
-                        // Avoid saving when nothing changed.
-                        if history_trimmed {
+                        // Persist once if an older full-history file contained unpinned items.
+                        if history_trimmed || pinned_count != original_count {
                             self.save_history();
                         }
                         // Initialize last_added_text_hash from the most recent item (even if pinned)
@@ -283,16 +275,32 @@ impl ClipboardManager {
     }
 
     pub fn save_history(&self) {
-        match serde_json::to_string_pretty(&self.history) {
+        let pinned_items = self
+            .history
+            .iter()
+            .filter(|item| item.pinned)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if pinned_items.is_empty() {
+            if let Err(e) = fs::remove_file(&self.persistence_path) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!("Failed to remove pinned history file: {}", e);
+                }
+            }
+            return;
+        }
+
+        match serde_json::to_string_pretty(&pinned_items) {
             Ok(content) => {
                 if let Some(parent) = self.persistence_path.parent() {
                     let _ = fs::create_dir_all(parent);
                 }
                 if let Err(e) = fs::write(&self.persistence_path, content) {
-                    eprintln!("Failed to save history: {}", e);
+                    eprintln!("Failed to save pinned history: {}", e);
                 }
             }
-            Err(e) => eprintln!("Failed to serialize history: {}", e),
+            Err(e) => eprintln!("Failed to serialize pinned history: {}", e),
         }
     }
 
@@ -487,9 +495,7 @@ impl ClipboardManager {
             .unwrap_or(self.history.len());
         self.history.insert(insert_pos, item);
 
-        // Trim history
         self.enforce_history_limit();
-        self.save_history();
     }
 
     /// Enforce the configured history size. Returns true if trimming occurred.
@@ -523,8 +529,11 @@ impl ClipboardManager {
     }
 
     pub fn remove_item(&mut self, id: &str) {
+        let was_pinned = self.history.iter().any(|item| item.id == id && item.pinned);
         self.history.retain(|item| item.id != id);
-        self.save_history();
+        if was_pinned {
+            self.save_history();
+        }
     }
 
     pub fn toggle_pin(&mut self, id: &str) -> Option<ClipboardItem> {
@@ -571,10 +580,11 @@ impl ClipboardManager {
         if insert_pos == current_pos {
             return true;
         }
-        // Now actually move the item
         let item = self.history.remove(current_pos);
         self.history.insert(insert_pos, item);
-        self.save_history();
+        if item_pinned {
+            self.save_history();
+        }
         true
     }
 
@@ -605,10 +615,6 @@ impl ClipboardManager {
             }
             keep
         });
-
-        if changed {
-            self.save_history();
-        }
 
         changed
     }
@@ -916,5 +922,99 @@ fn wait_for_clipboard_helper_ready(
                 return Err(format!("Failed to inspect {} status: {}", command, error));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_history_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "win11-clipboard-history-{}-{}.json",
+            name,
+            Uuid::new_v4()
+        ))
+    }
+
+    #[test]
+    fn unpinned_items_are_kept_in_memory_only() {
+        let path = test_history_path("memory-only");
+        let mut manager = ClipboardManager::new(path.clone(), 10);
+
+        let item = manager
+            .add_text("temporary item".to_string(), None)
+            .unwrap();
+
+        assert!(!item.pinned);
+        assert_eq!(manager.get_history().len(), 1);
+        assert!(!path.exists());
+
+        let restarted = ClipboardManager::new(path, 10);
+        assert!(restarted.get_history().is_empty());
+    }
+
+    #[test]
+    fn pinned_items_are_saved_and_reloaded() {
+        let path = test_history_path("pinned");
+        let mut manager = ClipboardManager::new(path.clone(), 10);
+        let pinned_item = manager.add_text("saved item".to_string(), None).unwrap();
+        let transient_item = manager.add_text("memory item".to_string(), None).unwrap();
+
+        manager.toggle_pin(&pinned_item.id).unwrap();
+
+        let stored = fs::read_to_string(&path).unwrap();
+        let stored_items: Vec<ClipboardItem> = serde_json::from_str(&stored).unwrap();
+        assert_eq!(stored_items.len(), 1);
+        assert_eq!(stored_items[0].id, pinned_item.id);
+        assert!(stored_items[0].pinned);
+        assert_ne!(stored_items[0].id, transient_item.id);
+
+        let restarted = ClipboardManager::new(path.clone(), 10);
+        let reloaded = restarted.get_history();
+        assert_eq!(reloaded.len(), 1);
+        assert_eq!(reloaded[0].id, pinned_item.id);
+        assert!(reloaded[0].pinned);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn unpinning_the_last_pinned_item_removes_the_history_file() {
+        let path = test_history_path("unpin");
+        let mut manager = ClipboardManager::new(path.clone(), 10);
+        let item = manager.add_text("saved item".to_string(), None).unwrap();
+
+        manager.toggle_pin(&item.id).unwrap();
+        assert!(path.exists());
+
+        manager.toggle_pin(&item.id).unwrap();
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn loading_legacy_full_history_purges_unpinned_items_from_disk() {
+        let path = test_history_path("legacy");
+        let mut pinned_item = ClipboardItem::new_text("pinned".to_string());
+        pinned_item.pinned = true;
+        let unpinned_item = ClipboardItem::new_text("unpinned".to_string());
+        fs::write(
+            &path,
+            serde_json::to_string_pretty(&vec![unpinned_item, pinned_item.clone()]).unwrap(),
+        )
+        .unwrap();
+
+        let manager = ClipboardManager::new(path.clone(), 10);
+        let history = manager.get_history();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].id, pinned_item.id);
+
+        let stored = fs::read_to_string(&path).unwrap();
+        let stored_items: Vec<ClipboardItem> = serde_json::from_str(&stored).unwrap();
+        assert_eq!(stored_items.len(), 1);
+        assert_eq!(stored_items[0].id, pinned_item.id);
+        assert!(stored_items[0].pinned);
+
+        let _ = fs::remove_file(path);
     }
 }

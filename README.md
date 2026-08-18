@@ -14,7 +14,7 @@ Với Ubuntu/Debian/Mint/Pop!_OS, người dùng cuối nên cài bằng file `.
 2. Tải file `.deb` mới nhất, ví dụ:
 
 ```text
-win11-clipboard-history_1.0.3_amd64.deb
+win11-clipboard-history_1.0.4_amd64.deb
 ```
 
 3. Cài file vừa tải:
@@ -36,7 +36,17 @@ Sau khi cài, app sẽ hướng dẫn cấu hình shortcut và quyền cần thi
 
 Trên GNOME Wayland, nếu muốn `Super+V` mở popup đúng vị trí con trỏ chuột, cần cài GNOME extension đi kèm.
 
-Nếu release có đính kèm gói extension, tải và giải nén theo hướng dẫn trong release đó. Nếu bạn đang có source code của project, cài extension bằng:
+Cài nhanh từ file zip tải tại releases:
+
+```bash
+gnome-extensions install --force ./win11-clipboard-history@gustavosett.dev.shell-extension.zip
+gnome-extensions disable win11-clipboard-history@gustavosett.dev
+sleep 1
+gnome-extensions enable win11-clipboard-history@gustavosett.dev
+```
+
+Hoặc cài trực tiếp từ source code của project bằng:
+
 
 ```bash
 scripts/install-gnome-extension.sh
@@ -229,6 +239,31 @@ sudo apt -f install
 ```
 
 ### Cài GNOME Extension Từ Source
+
+Nén extension thành file `.shell-extension.zip`:
+
+```bash
+gnome-extensions pack gnome-extension/win11-clipboard-history@gustavosett.dev \
+  --force \
+  --extra-source=prefs.js
+```
+
+File zip tạo ra ở thư mục project root:
+
+```text
+win11-clipboard-history@gustavosett.dev.shell-extension.zip
+```
+
+Cài nhanh từ file zip vừa build:
+
+```bash
+gnome-extensions install --force ./win11-clipboard-history@gustavosett.dev.shell-extension.zip
+gnome-extensions disable win11-clipboard-history@gustavosett.dev
+sleep 1
+gnome-extensions enable win11-clipboard-history@gustavosett.dev
+```
+
+Hoặc cài trực tiếp từ source bằng script:
 
 ```bash
 scripts/install-gnome-extension.sh

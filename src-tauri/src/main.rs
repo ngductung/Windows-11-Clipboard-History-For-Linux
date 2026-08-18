@@ -495,8 +495,6 @@ impl WindowController {
 
                     let mut manager = state.clipboard_manager.lock();
                     if manager.cleanup_old_items(interval_in_minutes) {
-                        // Mirror background cleanup: persist history explicitly, then emit event
-                        manager.save_history();
                         let _ = app.emit("history-cleared", ());
                     }
                 }
