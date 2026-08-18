@@ -467,6 +467,13 @@ impl WindowController {
 
         if let Some(window) = app.get_webview_window("main") {
             if window.is_visible().unwrap_or(false) {
+                if let Some((x, y)) = show_at {
+                    if !window.is_focused().unwrap_or(false) {
+                        Self::position_and_show_at(&window, app, x, y);
+                        return;
+                    }
+                }
+
                 // If window is visible, emit tab switch event if tab is specified
                 // This allows Super+. to switch to emoji tab even when window is open
                 if let Some(tab_name) = tab {

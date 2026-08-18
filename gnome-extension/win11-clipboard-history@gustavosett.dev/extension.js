@@ -48,9 +48,8 @@ export default class Win11ClipboardHistoryExtension extends Extension {
 
     try {
       const existingWindow = this._findClipboardWindow();
-      const existingWindowVisible = existingWindow?.showing_on_its_workspace?.() ?? false;
-      if (existingWindowVisible) {
-        log(`${LOG_PREFIX} window is visible, delegating close without moving`);
+      if (existingWindow && global.display.focus_window === existingWindow) {
+        log(`${LOG_PREFIX} window is focused, delegating close without moving`);
         this._spawnApp(command, Math.round(x), Math.round(y), targetHint);
         return;
       }
@@ -100,8 +99,8 @@ export default class Win11ClipboardHistoryExtension extends Extension {
       return;
 
     const window = this._findClipboardWindow();
-    const windowVisible = window?.showing_on_its_workspace?.() ?? false;
-    if (window && !windowVisible && !movedBeforeVisible) {
+    const windowHasActor = !!window?.get_compositor_private?.();
+    if (window && !windowHasActor && !movedBeforeVisible) {
       try {
         log(`${LOG_PREFIX} pre-moving window before visible to ${x}, ${y}`);
         this._moveWindowToPointer(window, x, y);
@@ -111,7 +110,7 @@ export default class Win11ClipboardHistoryExtension extends Extension {
       }
     }
 
-    if (window && windowVisible) {
+    if (window && windowHasActor) {
       try {
         this._moveWindowToPointer(window, x, y);
         this._scheduleSettledMoves(window, x, y);
