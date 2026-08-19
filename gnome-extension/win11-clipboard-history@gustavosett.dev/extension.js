@@ -41,7 +41,7 @@ export default class Win11ClipboardHistoryExtension extends Extension {
 
   _openAtPointer() {
     const [x, y] = global.get_pointer();
-    const command = this._settings.get_string('command') || 'win11-clipboard-history-bin';
+    const command = this._settings.get_string('command') || 'win11-clipboard-history';
     const targetWindow = global.display.focus_window;
     const targetHint = this._targetHint(targetWindow);
     log(`${LOG_PREFIX} keybinding fired at ${Math.round(x)}, ${Math.round(y)} using ${command}`);

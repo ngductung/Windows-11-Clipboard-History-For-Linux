@@ -228,13 +228,13 @@ src-tauri/target/release/bundle/deb/
 Cài lần đầu:
 
 ```bash
-sudo apt install ./src-tauri/target/release/bundle/deb/win11-clipboard-history_1.0.3_amd64.deb
+sudo apt install ./src-tauri/target/release/bundle/deb/win11-clipboard-history_1.0.4_amd64.deb
 ```
 
 Cài đè cùng version khi đang phát triển:
 
 ```bash
-sudo dpkg -i ./src-tauri/target/release/bundle/deb/win11-clipboard-history_1.0.3_amd64.deb
+sudo dpkg -i ./src-tauri/target/release/bundle/deb/win11-clipboard-history_1.0.4_amd64.deb
 sudo apt -f install
 ```
 

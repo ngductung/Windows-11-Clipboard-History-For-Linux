@@ -7,7 +7,7 @@
       <description>Keyboard shortcut that opens the clipboard history window at the current pointer position.</description>
     </key>
     <key name="command" type="s">
-      <default>'win11-clipboard-history-bin'</default>
+      <default>'win11-clipboard-history'</default>
       <summary>Application command</summary>
       <description>Command used to launch Windows 11 Clipboard History. Arguments are appended by the extension.</description>
     </key>
