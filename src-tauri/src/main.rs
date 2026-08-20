@@ -36,6 +36,7 @@ static STARTED_IN_BACKGROUND: AtomicBool = AtomicBool::new(false);
 /// After the first user toggle, this is set to true to allow normal show/hide behavior
 static INITIAL_SHOW_ALLOWED: AtomicBool = AtomicBool::new(false);
 static OPENING_POSITION_SUPPRESS_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
+static WAYLAND_FOCUS_SETTLE_MS: AtomicU64 = AtomicU64::new(100);
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -58,14 +59,35 @@ fn parse_show_at_args(args: &[String]) -> Option<(i32, i32)> {
     Some((x, y))
 }
 
-fn parse_target_hint_args(args: &[String]) -> (Option<String>, Option<String>) {
-    fn value_after(args: &[String], flag: &str) -> Option<String> {
-        let idx = args.iter().position(|arg| arg == flag)?;
-        args.get(idx + 1)
-            .cloned()
-            .filter(|value| !value.trim().is_empty())
-    }
+fn value_after(args: &[String], flag: &str) -> Option<String> {
+    let idx = args.iter().position(|arg| arg == flag)?;
+    args.get(idx + 1)
+        .cloned()
+        .filter(|value| !value.trim().is_empty())
+}
 
+fn apply_wayland_focus_settle_arg(args: &[String]) {
+    let Some(value) = value_after(args, "--wayland-focus-settle-ms") else {
+        return;
+    };
+
+    match value.parse::<u64>() {
+        Ok(ms) => {
+            let clamped = ms.min(500);
+            WAYLAND_FOCUS_SETTLE_MS.store(clamped, Ordering::SeqCst);
+            eprintln!(
+                "[FocusManager] Wayland focus settle delay set to {}ms",
+                clamped
+            );
+        }
+        Err(error) => eprintln!(
+            "[FocusManager] Ignoring invalid --wayland-focus-settle-ms value '{}': {}",
+            value, error
+        ),
+    }
+}
+
+fn parse_target_hint_args(args: &[String]) -> (Option<String>, Option<String>) {
     (
         value_after(args, "--target-app"),
         value_after(args, "--target-title"),
@@ -79,6 +101,11 @@ fn apply_target_hint_args(args: &[String]) {
     } else if is_wayland() {
         clear_target_hint();
     }
+}
+
+fn apply_runtime_args(args: &[String]) {
+    apply_wayland_focus_settle_arg(args);
+    apply_target_hint_args(args);
 }
 
 /// Application state shared across all handlers
@@ -372,8 +399,6 @@ impl PasteHelper {
     const TARGET_READY_TIMEOUT: Duration = Duration::from_millis(750);
     const TARGET_READY_POLL_INTERVAL: Duration = Duration::from_millis(2);
     const TARGET_STABLE_SAMPLES: u8 = 2;
-    const WAYLAND_FOCUS_SETTLE: Duration = Duration::from_millis(0);
-
     /// Restores focus to the previous window and waits for it to settle.
     /// This ensures keystrokes are sent to the correct application.
     async fn prepare_target_window(app: &AppHandle) -> Result<(), String> {
@@ -384,7 +409,10 @@ impl PasteHelper {
         Self::wait_for_popup_to_release_focus(app).await?;
 
         if is_wayland() {
-            tokio::time::sleep(Self::WAYLAND_FOCUS_SETTLE).await;
+            let settle_ms = WAYLAND_FOCUS_SETTLE_MS.load(Ordering::SeqCst);
+            if settle_ms > 0 {
+                tokio::time::sleep(Duration::from_millis(settle_ms)).await;
+            }
             return Ok(());
         }
 
@@ -540,22 +568,29 @@ impl WindowController {
 
         let is_wayland_session = is_wayland();
 
-        Self::show_positioned(window, app, is_wayland_session);
+        Self::show_positioned(window, app, is_wayland_session, true);
     }
 
     fn position_and_show_at(window: &WebviewWindow, app: &AppHandle, x: i32, y: i32) {
         suppress_position_save_for(Duration::from_millis(700));
         Self::position_at(window, x, y);
-        Self::show_positioned(window, app, is_wayland());
+        Self::show_positioned(window, app, is_wayland(), !is_wayland());
     }
 
-    fn show_positioned(window: &WebviewWindow, app: &AppHandle, is_wayland_session: bool) {
+    fn show_positioned(
+        window: &WebviewWindow,
+        app: &AppHandle,
+        is_wayland_session: bool,
+        focus_ui: bool,
+    ) {
         if is_wayland_session {
             // Wayland is less prone to visible restacking when the window is
             // already topmost before it is mapped.
             let _ = window.set_always_on_top(true);
             let _ = window.show();
-            let _ = window.set_focus();
+            if focus_ui {
+                let _ = window.set_focus();
+            }
         } else {
             // X11 born as normal window.
             // We do NOT activate always_on_top to avoid focus blocking and glitch.
@@ -580,7 +615,7 @@ impl WindowController {
                 }
             }
 
-            let _ = app_clone.emit("window-shown", ());
+            let _ = app_clone.emit("window-shown", focus_ui);
         });
     }
 
@@ -894,6 +929,8 @@ fn main() {
         println!("        --settings   Open settings window on startup");
         println!("        --emoji      Open with emoji picker tab selected");
         println!("        --show-at X Y Open clipboard history at screen coordinates");
+        println!("        --wayland-focus-settle-ms N");
+        println!("                    Wait N milliseconds before paste on Wayland");
         println!();
         println!("SHORTCUTS:");
         println!("    Super+V          Open clipboard history");
@@ -926,7 +963,7 @@ fn main() {
     let show_at_on_start_clone = show_at_on_start;
 
     win11_clipboard_history_lib::session::init();
-    apply_target_hint_args(&args);
+    apply_runtime_args(&args);
 
     let is_mouse_inside = Arc::new(AtomicBool::new(false));
     let base_dir = dirs::data_local_dir()
@@ -958,7 +995,7 @@ fn main() {
         // Single Instance Plugin: When user triggers shortcut and app is already running,
         // the OS launches a new instance which signals the existing one to toggle
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            apply_target_hint_args(&argv);
+            apply_runtime_args(&argv);
 
             // Check if --settings flag is present
             if argv.iter().any(|arg| arg == "--settings") {

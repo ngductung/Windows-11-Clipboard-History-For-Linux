@@ -11,5 +11,10 @@
       <summary>Application command</summary>
       <description>Command used to launch Windows 11 Clipboard History. Arguments are appended by the extension.</description>
     </key>
+    <key name="wayland-focus-settle-ms" type="u">
+      <default>100</default>
+      <summary>Wayland paste focus delay</summary>
+      <description>Milliseconds the app waits after hiding the clipboard popup before sending the paste shortcut on Wayland.</description>
+    </key>
   </schema>
 </schemalist>

@@ -7,17 +7,23 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const KEYBINDING_NAME = 'toggle-clipboard';
+const WAYLAND_FOCUS_SETTLE_KEY = 'wayland-focus-settle-ms';
 const WINDOW_TITLE = 'Clipboard History';
 const LOG_PREFIX = '[Win11ClipboardHistoryPointer]';
 const MOVE_RETRY_COUNT = 80;
 const MOVE_RETRY_INTERVAL_MS = 5;
 const POST_SHOW_MOVE_DELAYS_MS = [16, 32, 64];
 const WINDOW_PADDING = 10;
+const FOCUS_RESTORE_POLL_MS = 10;
+const FOCUS_RESTORE_TIMEOUT_MS = 30000;
+const FOCUS_RESTORE_INITIAL_DELAY_MS = 80;
+const FOCUS_RESTORE_RETRY_DELAYS_MS = [20, 50, 100];
 
 export default class Win11ClipboardHistoryExtension extends Extension {
   enable() {
     this._settings = this.getSettings();
     this._timeoutIds = new Set();
+    this._restoreWatchId = null;
     log(`${LOG_PREFIX} enabled`);
 
     Main.wm.addKeybinding(
@@ -33,6 +39,7 @@ export default class Win11ClipboardHistoryExtension extends Extension {
     for (const timeoutId of this._timeoutIds ?? [])
       GLib.source_remove(timeoutId);
     this._timeoutIds = null;
+    this._restoreWatchId = null;
 
     Main.wm.removeKeybinding(KEYBINDING_NAME);
     log(`${LOG_PREFIX} disabled`);
@@ -44,6 +51,7 @@ export default class Win11ClipboardHistoryExtension extends Extension {
     const command = this._settings.get_string('command') || 'win11-clipboard-history';
     const targetWindow = global.display.focus_window;
     const targetHint = this._targetHint(targetWindow);
+    this._watchTargetRestore(targetWindow);
     log(`${LOG_PREFIX} keybinding fired at ${Math.round(x)}, ${Math.round(y)} using ${command}`);
 
     try {
@@ -73,6 +81,7 @@ export default class Win11ClipboardHistoryExtension extends Extension {
   _spawnApp(command, x, y, targetHint = {}) {
     const [, argv] = GLib.shell_parse_argv(command);
     argv.push('--show-at', `${x}`, `${y}`);
+    argv.push('--wayland-focus-settle-ms', `${this._settings.get_uint(WAYLAND_FOCUS_SETTLE_KEY)}`);
     if (targetHint.appId)
       argv.push('--target-app', targetHint.appId);
     if (targetHint.title)
@@ -149,6 +158,100 @@ export default class Win11ClipboardHistoryExtension extends Extension {
           logError(error, `${LOG_PREFIX} failed to settle clipboard window position`);
         }
       });
+    }
+  }
+
+  _watchTargetRestore(targetWindow) {
+    if (!targetWindow || this._isClipboardWindow(targetWindow))
+      return;
+
+    if (this._restoreWatchId) {
+      GLib.source_remove(this._restoreWatchId);
+      this._timeoutIds?.delete(this._restoreWatchId);
+      this._restoreWatchId = null;
+    }
+
+    const startedAt = GLib.get_monotonic_time();
+    let clipboardWasVisible = false;
+    let clipboardWasFocused = false;
+
+    this._restoreWatchId = GLib.timeout_add(
+      GLib.PRIORITY_DEFAULT,
+      FOCUS_RESTORE_POLL_MS,
+      () => {
+        if (!this._settings) {
+          this._restoreWatchId = null;
+          return GLib.SOURCE_REMOVE;
+        }
+
+        const elapsedMs = (GLib.get_monotonic_time() - startedAt) / 1000;
+        if (elapsedMs < FOCUS_RESTORE_INITIAL_DELAY_MS)
+          return GLib.SOURCE_CONTINUE;
+
+        if (elapsedMs >= FOCUS_RESTORE_TIMEOUT_MS) {
+          log(`${LOG_PREFIX} focus restore watcher timed out`);
+          this._timeoutIds?.delete(this._restoreWatchId);
+          this._restoreWatchId = null;
+          return GLib.SOURCE_REMOVE;
+        }
+
+        const clipboardWindow = this._findClipboardWindow();
+        const focusedWindow = global.display.focus_window;
+        const clipboardVisible = clipboardWindow?.showing_on_its_workspace?.() ?? false;
+        const clipboardHasActor = !!clipboardWindow?.get_compositor_private?.();
+
+        if (clipboardWindow && clipboardVisible && clipboardHasActor)
+          clipboardWasVisible = true;
+
+        if (clipboardWindow && focusedWindow === clipboardWindow) {
+          clipboardWasFocused = true;
+          return GLib.SOURCE_CONTINUE;
+        }
+
+        if (
+          (clipboardWasVisible || clipboardWasFocused) &&
+          (!clipboardWindow || !clipboardVisible || !clipboardHasActor)
+        ) {
+          this._activateTargetWindow(targetWindow);
+          this._timeoutIds?.delete(this._restoreWatchId);
+          this._restoreWatchId = null;
+          return GLib.SOURCE_REMOVE;
+        }
+
+        return GLib.SOURCE_CONTINUE;
+      }
+    );
+
+    this._timeoutIds?.add(this._restoreWatchId);
+  }
+
+  _activateTargetWindow(targetWindow) {
+    if (!targetWindow || this._isClipboardWindow(targetWindow))
+      return;
+
+    this._activateTargetWindowOnce(targetWindow);
+    for (const delayMs of FOCUS_RESTORE_RETRY_DELAYS_MS)
+      this._addTimeout(delayMs, () => this._activateTargetWindowOnce(targetWindow));
+  }
+
+  _activateTargetWindowOnce(targetWindow) {
+    if (!targetWindow || this._isClipboardWindow(targetWindow))
+      return;
+
+    try {
+      if (Main.activateWindow)
+        Main.activateWindow(targetWindow);
+      else {
+        const timestamp = global.display.get_current_time_roundtrip?.() || global.get_current_time?.() || 0;
+        targetWindow.activate(timestamp);
+      }
+
+      const focusedWindow = global.display.focus_window;
+      log(
+        `${LOG_PREFIX} requested target focus for ${targetWindow.get_title?.() || 'target window'}; focused=${focusedWindow?.get_title?.() || 'none'}`
+      );
+    } catch (error) {
+      logError(error, `${LOG_PREFIX} failed to restore target focus`);
     }
   }
 

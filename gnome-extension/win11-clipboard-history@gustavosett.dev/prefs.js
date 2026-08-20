@@ -5,6 +5,7 @@ import Gtk from 'gi://Gtk?version=4.0';
 import { ExtensionPreferences } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 const KEYBINDING_NAME = 'toggle-clipboard';
+const WAYLAND_FOCUS_SETTLE_KEY = 'wayland-focus-settle-ms';
 const EMPTY_SHORTCUT_LABEL = 'Disabled';
 const RECORDING_LABEL = 'Press shortcut';
 const MODIFIER_KEYVALS = new Set([
@@ -40,8 +41,33 @@ export default class Win11ClipboardHistoryPreferences extends ExtensionPreferenc
     page.add(launcherGroup);
 
     launcherGroup.add(this._createShortcutRow(settings));
+    launcherGroup.add(this._createWaylandFocusSettleRow(settings));
 
     window.add(page);
+  }
+
+  _createWaylandFocusSettleRow(settings) {
+    const adjustment = new Gtk.Adjustment({
+      lower: 0,
+      upper: 500,
+      step_increment: 10,
+      page_increment: 50,
+      value: settings.get_uint(WAYLAND_FOCUS_SETTLE_KEY),
+    });
+
+    const row = new Adw.SpinRow({
+      title: 'Wayland paste delay',
+      subtitle: 'Lower is faster; increase if paste misses the focused editor.',
+      adjustment,
+      numeric: true,
+      digits: 0,
+    });
+
+    row.connect('notify::value', () => {
+      settings.set_uint(WAYLAND_FOCUS_SETTLE_KEY, Math.round(row.value));
+    });
+
+    return row;
   }
 
   _createShortcutRow(settings) {

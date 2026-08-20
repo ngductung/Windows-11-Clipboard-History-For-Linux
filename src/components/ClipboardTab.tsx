@@ -292,7 +292,9 @@ export function ClipboardTab(props: {
   }, [filteredHistory])
 
   useEffect(() => {
-    const focusFirstItem = () => {
+    const focusFirstItem = (event: { payload: boolean }) => {
+      if (event.payload === false) return
+
       setTimeout(() => {
         if (filteredHistoryRef.current.length > 0) {
           setFocusedIndex(0)
@@ -300,7 +302,7 @@ export function ClipboardTab(props: {
         }
       }, 100)
     }
-    const unlistenWindowShown = listen('window-shown', focusFirstItem)
+    const unlistenWindowShown = listen<boolean>('window-shown', focusFirstItem)
     return () => {
       unlistenWindowShown.then((u) => u())
     }

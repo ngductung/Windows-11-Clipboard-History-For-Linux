@@ -200,7 +200,9 @@ function ClipboardApp() {
 
   // Handle window-shown event for focus management (registered once)
   useEffect(() => {
-    const focusFirstItem = () => {
+    const focusFirstItem = (event: { payload: boolean }) => {
+      if (event.payload === false) return
+
       // Small delay to ensure the window is fully rendered and focused
       setTimeout(() => {
         const currentTab = activeTabRef.current
@@ -214,7 +216,7 @@ function ClipboardApp() {
     }
 
     // Listen to window-shown event (emitted from Rust when window is toggled visible)
-    const unlistenWindowShown = listen('window-shown', focusFirstItem)
+    const unlistenWindowShown = listen<boolean>('window-shown', focusFirstItem)
 
     return () => {
       unlistenWindowShown.then((unlisten) => unlisten())
