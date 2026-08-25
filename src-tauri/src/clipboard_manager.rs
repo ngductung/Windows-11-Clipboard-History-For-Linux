@@ -62,6 +62,72 @@ fn get_system_clipboard() -> Result<Clipboard, String> {
     Clipboard::new().map_err(|e| e.to_string())
 }
 
+fn should_preserve_html(plain: &str, html: &str) -> bool {
+    let html = html.trim();
+    if html.is_empty() {
+        return false;
+    }
+
+    if looks_like_plain_clipboard_token(plain) && html_text_matches_plain(plain, html) {
+        return false;
+    }
+
+    true
+}
+
+fn looks_like_plain_clipboard_token(text: &str) -> bool {
+    let trimmed = text.trim();
+
+    if trimmed.is_empty()
+        || trimmed.contains('\n')
+        || trimmed.contains('\r')
+        || trimmed.split_whitespace().count() > 1
+        || trimmed.chars().count() > 512
+    {
+        return false;
+    }
+
+    trimmed.starts_with('/')
+        || trimmed.starts_with("./")
+        || trimmed.starts_with("../")
+        || trimmed.starts_with("~/")
+        || trimmed.contains('/')
+        || trimmed.contains('\\')
+        || trimmed.contains("://")
+        || trimmed.contains('_')
+        || (trimmed.contains('.') && !trimmed.ends_with('.'))
+}
+
+fn html_text_matches_plain(plain: &str, html: &str) -> bool {
+    decode_basic_html_entities(&strip_html_tags(html)).trim() == plain.trim()
+}
+
+fn strip_html_tags(html: &str) -> String {
+    let mut text = String::with_capacity(html.len());
+    let mut in_tag = false;
+
+    for ch in html.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' if in_tag => in_tag = false,
+            _ if !in_tag => text.push(ch),
+            _ => {}
+        }
+    }
+
+    text
+}
+
+fn decode_basic_html_entities(text: &str) -> String {
+    text.replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
 // --- Data Structures ---
 
 /// Content type for clipboard items
@@ -364,9 +430,9 @@ impl ClipboardManager {
         // If so, remove the old entry so we can add fresh at top
         self.remove_duplicate_text_from_history(&text);
 
-        // Create new item - use RichText if HTML is available, otherwise plain Text
+        // Create new item - preserve RichText only when the HTML carries useful formatting.
         let item = match html {
-            Some(html_content) if !html_content.trim().is_empty() => {
+            Some(html_content) if should_preserve_html(&text, &html_content) => {
                 ClipboardItem::new_rich_text(text, html_content)
             }
             _ => ClipboardItem::new_text(text),
@@ -952,6 +1018,48 @@ mod tests {
 
         let restarted = ClipboardManager::new(path, 10);
         assert!(restarted.get_history().is_empty());
+    }
+
+    #[test]
+    fn html_wrapped_path_is_stored_as_plain_text() {
+        let path = test_history_path("html-path");
+        let mut manager = ClipboardManager::new(path, 10);
+
+        let item = manager
+            .add_text(
+                "/etc/apache2/digest_auth_passwd".to_string(),
+                Some(
+                    r#"<span style="font-family: monospace;">/etc/apache2/digest_auth_passwd</span>"#
+                        .to_string(),
+                ),
+            )
+            .unwrap();
+
+        assert_eq!(
+            item.content,
+            ClipboardContent::Text("/etc/apache2/digest_auth_passwd".to_string())
+        );
+    }
+
+    #[test]
+    fn formatted_multi_word_html_is_stored_as_rich_text() {
+        let path = test_history_path("rich-text");
+        let mut manager = ClipboardManager::new(path, 10);
+
+        let item = manager
+            .add_text(
+                "Hello world".to_string(),
+                Some("<strong>Hello</strong> <em>world</em>".to_string()),
+            )
+            .unwrap();
+
+        assert_eq!(
+            item.content,
+            ClipboardContent::RichText {
+                plain: "Hello world".to_string(),
+                html: "<strong>Hello</strong> <em>world</em>".to_string(),
+            }
+        );
     }
 
     #[test]
