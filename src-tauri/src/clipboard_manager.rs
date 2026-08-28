@@ -68,7 +68,9 @@ fn should_preserve_html(plain: &str, html: &str) -> bool {
         return false;
     }
 
-    if looks_like_plain_clipboard_token(plain) && html_text_matches_plain(plain, html) {
+    if html_text_matches_plain(plain, html)
+        && (looks_like_plain_clipboard_token(plain) || looks_like_generated_plain_html(html))
+    {
         return false;
     }
 
@@ -100,6 +102,18 @@ fn looks_like_plain_clipboard_token(text: &str) -> bool {
 
 fn html_text_matches_plain(plain: &str, html: &str) -> bool {
     decode_basic_html_entities(&strip_html_tags(html)).trim() == plain.trim()
+}
+
+fn looks_like_generated_plain_html(html: &str) -> bool {
+    let lower = html.to_lowercase();
+
+    ((lower.contains("<span") || lower.contains("<font") || lower.contains("<div"))
+        && (lower.contains("style=") || lower.contains("class=")))
+        || lower.contains("font-family:")
+        || lower.contains("white-space:")
+        || lower.contains("background-color:")
+        || lower.contains("-webkit-")
+        || lower.contains("oklab(")
 }
 
 fn strip_html_tags(html: &str) -> String {
@@ -1038,6 +1052,27 @@ mod tests {
         assert_eq!(
             item.content,
             ClipboardContent::Text("/etc/apache2/digest_auth_passwd".to_string())
+        );
+    }
+
+    #[test]
+    fn styled_html_wrapper_with_spaces_is_stored_as_plain_text() {
+        let path = test_history_path("html-styled-wrapper");
+        let mut manager = ClipboardManager::new(path, 10);
+
+        let item = manager
+            .add_text(
+                "SELECT * FROM users WHERE id = 1".to_string(),
+                Some(
+                    r#"<span style="color: oklab(0.895351 0.00118113 -0.00387758); font-family: monospace; white-space: pre-wrap;">SELECT * FROM users WHERE id = 1</span>"#
+                        .to_string(),
+                ),
+            )
+            .unwrap();
+
+        assert_eq!(
+            item.content,
+            ClipboardContent::Text("SELECT * FROM users WHERE id = 1".to_string())
         );
     }
 

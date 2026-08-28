@@ -316,6 +316,9 @@ function KeyboardShortcutsSection({ isDark }: KeyboardShortcutsSectionProps) {
  */
 function SettingsApp() {
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS)
+  const [ctrlShiftTargetsText, setCtrlShiftTargetsText] = useState(
+    DEFAULT_SETTINGS.ctrl_shift_v_paste_targets.join('\n')
+  )
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
@@ -342,6 +345,7 @@ function SettingsApp() {
     invoke<UserSettings>('get_user_settings')
       .then((loadedSettings) => {
         setSettings(loadedSettings)
+        setCtrlShiftTargetsText(loadedSettings.ctrl_shift_v_paste_targets.join('\n'))
         setIsLoading(false)
       })
       .catch((err) => {
@@ -353,16 +357,16 @@ function SettingsApp() {
     const mainWindow = new Window('main')
     mainWindow.show().catch(console.error)
 
-    // Prevent window close, just hide it instead
+    // Ignore titlebar/Alt+F4 close requests; only the Done button hides Settings.
     const currentWindow = getCurrentWindow()
     const unlistenClosePromise = currentWindow.onCloseRequested(async (event) => {
       event.preventDefault()
-      await currentWindow.hide()
     })
 
     // Listen for settings changes (in case another settings window is open)
     const unlistenSettingsPromise = listen<UserSettings>('app-settings-changed', (event) => {
       setSettings(event.payload)
+      setCtrlShiftTargetsText(event.payload.ctrl_shift_v_paste_targets.join('\n'))
     })
 
     // Hide main window when settings window closes
@@ -452,20 +456,21 @@ function SettingsApp() {
       .filter(Boolean)
 
   const handleCtrlShiftTargetsChange = (value: string) => {
-    setSettings((prev) => ({
-      ...prev,
-      ctrl_shift_v_paste_targets: normalizeCtrlShiftTargets(value),
-    }))
+    setCtrlShiftTargetsText(value)
   }
 
   const commitCtrlShiftTargetsChange = (value: string) => {
+    const normalizedTargets = normalizeCtrlShiftTargets(value)
     const newSettings = {
       ...settings,
-      ctrl_shift_v_paste_targets: normalizeCtrlShiftTargets(value),
+      ctrl_shift_v_paste_targets: normalizedTargets,
     }
+    setCtrlShiftTargetsText(normalizedTargets.join('\n'))
     setSettings(newSettings)
     saveSettings(newSettings)
   }
+
+  const ctrlShiftTargetCount = normalizeCtrlShiftTargets(ctrlShiftTargetsText).length
 
   // Custom Kaomoji Handlers
   const addCustomKaomoji = useCallback(() => {
@@ -493,7 +498,14 @@ function SettingsApp() {
   // Handle window close
   const handleClose = async () => {
     try {
-      await saveSettings(settings)
+      const normalizedTargets = normalizeCtrlShiftTargets(ctrlShiftTargetsText)
+      const newSettings = {
+        ...settings,
+        ctrl_shift_v_paste_targets: normalizedTargets,
+      }
+      setCtrlShiftTargetsText(normalizedTargets.join('\n'))
+      setSettings(newSettings)
+      await saveSettings(newSettings)
       await getCurrentWindow().hide()
     } catch (err) {
       console.error('Failed to close window:', err)
@@ -533,6 +545,7 @@ function SettingsApp() {
           'flex items-center justify-between px-8 py-6 flex-shrink-0',
           'transition-colors duration-200'
         )}
+        data-tauri-drag-region
       >
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Personalization</h1>
@@ -1021,13 +1034,13 @@ function SettingsApp() {
                   isDark ? 'bg-black/20' : 'bg-gray-100'
                 )}
               >
-                {settings.ctrl_shift_v_paste_targets.length}
+                {ctrlShiftTargetCount}
               </div>
             </div>
 
             <textarea
               id="ctrl-shift-v-targets"
-              value={settings.ctrl_shift_v_paste_targets.join('\n')}
+              value={ctrlShiftTargetsText}
               onChange={(e) => handleCtrlShiftTargetsChange(e.target.value)}
               onBlur={(e) => commitCtrlShiftTargetsChange(e.target.value)}
               spellCheck={false}

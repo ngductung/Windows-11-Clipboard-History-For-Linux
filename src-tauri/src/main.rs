@@ -793,7 +793,7 @@ impl SettingsController {
                 .title("Settings - Clipboard History")
                 .inner_size(480.0, 520.0)
                 .resizable(false)
-                .decorations(true)
+                .decorations(false)
                 .transparent(false)
                 .visible(true)
                 .skip_taskbar(false)
